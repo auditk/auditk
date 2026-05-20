@@ -18,6 +18,7 @@ from glasshouse_core.schema import (
     Action,
     ActionType,
     Actor,
+    AgentConfig,
     EvidencePack,
     FlowType,
     Issuer,
@@ -82,6 +83,7 @@ def _minimal_evidence_pack() -> EvidencePack:
 _PARITY_CASES = [
     (_minimal_trace, "trace.schema.json"),
     (_minimal_evidence_pack, "evidence-pack.schema.json"),
+    (lambda: AgentConfig(config_id="cfg-1", version="0.1", flow_type=FlowType.GENERIC, system_prompt="test"), "agent-config.schema.json"),
 ]
 
 
