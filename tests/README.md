@@ -24,7 +24,7 @@ Probe-quality tests measure precision, recall, false-positive rate, and false-ne
 
 ## 6. Drift Validation
 
-Drift-validation tests reproduce the correlation study in `glasshouse-spec/docs/drift-validation-v0.md`. They load the human-labelled corpus of 30 traces (committed to `tests/fixtures/labelled_traces/`) and assert that the Pearson correlation between human labels and `compute_drift` scores is above the published threshold (≥ 0.5 for v0). These tests are deterministic once the fixtures are committed. Tests live in `tests/drift_validation/` (created when Phase 9 lands). Run with: `pytest tests/drift_validation/`.
+Drift-validation tests reproduce the correlation study in `glasshouse-spec/docs/drift-validation-v0.md`. They load the human-labelled corpus of 30 traces (committed to `tests/fixtures/labelled_traces/`) and assert that the Spearman ρ between human labels and `compute_drift` scores meets the published threshold (ρ ≥ 0.70 for v0), consistent with `glasshouse-spec/VALIDATION.md`. These tests are deterministic once the fixtures are committed. Tests live in `tests/drift_validation/` (created when Phase 9 lands). Run with: `pytest tests/drift_validation/`.
 
 ## 7. Multi-Tenant Operational
 
