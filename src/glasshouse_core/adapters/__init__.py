@@ -12,6 +12,7 @@ from glasshouse_core.adapters.protocols import (
     Stimulus,
     TraceAdapter,
 )
+from glasshouse_core.adapters.registry import _REGISTRY as registry, get_adapter
 
 __all__ = [
     "AgentConfigLoader",
@@ -21,4 +22,6 @@ __all__ = [
     "Signer",
     "Stimulus",
     "TraceAdapter",
+    "get_adapter",
+    "registry",
 ]
