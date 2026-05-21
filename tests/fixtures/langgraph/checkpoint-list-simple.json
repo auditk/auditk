@@ -1,0 +1,51 @@
+[
+  {
+    "config": {"configurable": {"thread_id": "thread-simple-001", "checkpoint_id": "ck-s0"}},
+    "checkpoint": {
+      "id": "ck-s0",
+      "channel_values": {
+        "messages": [{"type": "human", "content": "Tell me about Glasshouse smart lights."}],
+        "__current_tasks": [],
+        "intent": null
+      },
+      "channel_versions": {},
+      "versions_seen": {},
+      "pending_sends": []
+    },
+    "metadata": {
+      "source": "input",
+      "step": 0,
+      "writes": {}
+    },
+    "parent_config": null
+  },
+  {
+    "config": {"configurable": {"thread_id": "thread-simple-001", "checkpoint_id": "ck-s1"}},
+    "checkpoint": {
+      "id": "ck-s1",
+      "channel_values": {
+        "messages": [
+          {"type": "human", "content": "Tell me about Glasshouse smart lights."},
+          {"type": "ai", "content": "Glasshouse smart lights let you control brightness and colour via voice or app."}
+        ],
+        "__current_tasks": [],
+        "intent": null
+      },
+      "channel_versions": {},
+      "versions_seen": {},
+      "pending_sends": []
+    },
+    "metadata": {
+      "source": "loop",
+      "step": 1,
+      "writes": {
+        "respond": {
+          "messages": [
+            {"type": "ai", "content": "Glasshouse smart lights let you control brightness and colour via voice or app."}
+          ]
+        }
+      }
+    },
+    "parent_config": {"configurable": {"thread_id": "thread-simple-001", "checkpoint_id": "ck-s0"}}
+  }
+]

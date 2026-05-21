@@ -1,0 +1,39 @@
+[
+  {
+    "span_id": "agent001",
+    "trace_id": "trace-def-002",
+    "parent_span_id": null,
+    "name": "rag-agent",
+    "start_time": "2026-01-15T11:00:00Z",
+    "end_time": "2026-01-15T11:00:08Z",
+    "attributes": {
+      "openinference.span.kind": "AGENT",
+      "session.id": "session-rag-77",
+      "user.id": "tenant-demo",
+      "input.value": "What are the terms of the refund policy?"
+    }
+  },
+  {
+    "span_id": "retriever001",
+    "trace_id": "trace-def-002",
+    "parent_span_id": "agent001",
+    "name": "policy-vector-search",
+    "start_time": "2026-01-15T11:00:01Z",
+    "end_time": "2026-01-15T11:00:03Z",
+    "attributes": {
+      "openinference.span.kind": "RETRIEVER",
+      "input.value": "refund policy terms",
+      "output.value": "Retrieved 2 relevant documents",
+      "retrieval.documents": [
+        {
+          "document.id": "doc-policy-001",
+          "document.content": "Customers may request a refund within 30 days of purchase. The refund will be processed within 5-7 business days."
+        },
+        {
+          "document.id": "doc-policy-002",
+          "document.content": "Digital products are non-refundable after download. Physical goods must be returned in original packaging."
+        }
+      ]
+    }
+  }
+]
