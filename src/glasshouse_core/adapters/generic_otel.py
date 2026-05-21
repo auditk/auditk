@@ -20,9 +20,6 @@ from glasshouse_core.schema import (
     Trace,
 )
 
-_KIND_TO_FLOW: dict[str, FlowType] = {}  # see _infer_flow_type for logic
-
-
 def _infer_flow_type(span_kind: str) -> FlowType:
     """Map openinference.span.kind to FlowType."""
     upper = span_kind.upper()
