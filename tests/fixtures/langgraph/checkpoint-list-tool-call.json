@@ -1,0 +1,78 @@
+[
+  {
+    "config": {"configurable": {"thread_id": "thread-tool-001", "checkpoint_id": "ck-t0"}},
+    "checkpoint": {
+      "id": "ck-t0",
+      "channel_values": {
+        "messages": [{"type": "human", "content": "Search for dimmable LED bulbs in the Glasshouse catalogue."}],
+        "__current_tasks": [],
+        "intent": null,
+        "search_results": null
+      },
+      "channel_versions": {},
+      "versions_seen": {},
+      "pending_sends": []
+    },
+    "metadata": {
+      "source": "input",
+      "step": 0,
+      "writes": {}
+    },
+    "parent_config": null
+  },
+  {
+    "config": {"configurable": {"thread_id": "thread-tool-001", "checkpoint_id": "ck-t1"}},
+    "checkpoint": {
+      "id": "ck-t1",
+      "channel_values": {
+        "messages": [{"type": "human", "content": "Search for dimmable LED bulbs in the Glasshouse catalogue."}],
+        "__current_tasks": [],
+        "intent": null,
+        "search_results": ["GH-LED-Dim-60W", "GH-LED-Dim-100W"]
+      },
+      "channel_versions": {},
+      "versions_seen": {},
+      "pending_sends": []
+    },
+    "metadata": {
+      "source": "loop",
+      "step": 1,
+      "writes": {
+        "search_products": {
+          "search_results": ["GH-LED-Dim-60W", "GH-LED-Dim-100W"]
+        }
+      }
+    },
+    "parent_config": {"configurable": {"thread_id": "thread-tool-001", "checkpoint_id": "ck-t0"}}
+  },
+  {
+    "config": {"configurable": {"thread_id": "thread-tool-001", "checkpoint_id": "ck-t2"}},
+    "checkpoint": {
+      "id": "ck-t2",
+      "channel_values": {
+        "messages": [
+          {"type": "human", "content": "Search for dimmable LED bulbs in the Glasshouse catalogue."},
+          {"type": "ai", "content": "I found two dimmable LED bulbs: GH-LED-Dim-60W (60W equivalent) and GH-LED-Dim-100W (100W equivalent)."}
+        ],
+        "__current_tasks": [],
+        "intent": null,
+        "search_results": ["GH-LED-Dim-60W", "GH-LED-Dim-100W"]
+      },
+      "channel_versions": {},
+      "versions_seen": {},
+      "pending_sends": []
+    },
+    "metadata": {
+      "source": "loop",
+      "step": 2,
+      "writes": {
+        "respond": {
+          "messages": [
+            {"type": "ai", "content": "I found two dimmable LED bulbs: GH-LED-Dim-60W (60W equivalent) and GH-LED-Dim-100W (100W equivalent)."}
+          ]
+        }
+      }
+    },
+    "parent_config": {"configurable": {"thread_id": "thread-tool-001", "checkpoint_id": "ck-t1"}}
+  }
+]
