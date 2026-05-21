@@ -1,0 +1,42 @@
+[
+  {
+    "span_id": "root001",
+    "trace_id": "trace-abc-001",
+    "parent_span_id": null,
+    "name": "customer-support-chain",
+    "start_time": "2026-01-15T10:00:00Z",
+    "end_time": "2026-01-15T10:00:05Z",
+    "attributes": {
+      "openinference.span.kind": "CHAIN",
+      "session.id": "session-xyz-42",
+      "user.id": "tenant-corp-1",
+      "input.value": "What is my current account balance?"
+    }
+  },
+  {
+    "span_id": "llm001",
+    "trace_id": "trace-abc-001",
+    "parent_span_id": "root001",
+    "name": "gpt-4o",
+    "start_time": "2026-01-15T10:00:01Z",
+    "end_time": "2026-01-15T10:00:03Z",
+    "attributes": {
+      "openinference.span.kind": "LLM",
+      "input.value": "You are a helpful assistant. User asks: What is my current account balance?",
+      "output.value": "I need to look up your account information. Let me check that for you."
+    }
+  },
+  {
+    "span_id": "tool001",
+    "trace_id": "trace-abc-001",
+    "parent_span_id": "root001",
+    "name": "get_account_balance",
+    "start_time": "2026-01-15T10:00:03Z",
+    "end_time": "2026-01-15T10:00:04Z",
+    "attributes": {
+      "openinference.span.kind": "TOOL",
+      "input.value": "{\"account_id\": \"acc-99812\"}",
+      "output.value": "{\"balance\": 1250.00, \"currency\": \"GBP\"}"
+    }
+  }
+]
