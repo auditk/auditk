@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from glasshouse_core.adapters.protocols import Signer
@@ -29,7 +29,7 @@ def build(
     signer: Signer,
 ) -> EvidencePack:
     """Build and sign an EvidencePack from traces and probe results."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     summary = _build_summary(traces, now)
     drift = compute_drift(traces[0]) if traces else None
 

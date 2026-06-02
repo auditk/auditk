@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from cryptography.hazmat.primitives import serialization
@@ -56,7 +56,7 @@ class LocalEd25519Signer:
             algorithm="ed25519",
             public_key=self._pub_pem,
             signature=base64.b64encode(sig_bytes).decode(),
-            issued_at=datetime.now(timezone.utc),
+            issued_at=datetime.now(UTC),
         )
 
 

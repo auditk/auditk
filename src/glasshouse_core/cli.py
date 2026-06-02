@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -78,7 +77,9 @@ def attest(
     out: str = typer.Option("evidence-pack.json", help="Output evidence pack path."),
     jurisdiction: str = typer.Option("", help="Comma-separated jurisdictions, e.g. EU,UK."),
     risk_tier: str = typer.Option("limited", help="EU AI Act risk tier."),
-    probe_results_file: Optional[str] = typer.Option(None, "--probe-results", help="Path to probe results JSON."),
+    probe_results_file: str | None = typer.Option(
+        None, "--probe-results", help="Path to probe results JSON."
+    ),
 ) -> None:
     """Build and sign an evidence pack from traces + optional probe results."""
     from glasshouse_core.attestation.pack import build
@@ -109,7 +110,9 @@ def attest(
         priv_key_path, _ = generate_keypair(Path(signer))
     signer_obj = LocalEd25519Signer(priv_key_path)
 
-    jurisdictions = [j.strip() for j in jurisdiction.split(",") if j.strip()] if jurisdiction else []
+    jurisdictions = (
+        [j.strip() for j in jurisdiction.split(",") if j.strip()] if jurisdiction else []
+    )
 
     pack = build(
         traces=trace_list,
@@ -128,7 +131,7 @@ def attest(
 def replay(
     trace: str = typer.Option(..., help="Path to the recorded trace."),
     policy: str = typer.Option(..., help="Alternate policy / prompt file."),
-    out: Optional[str] = typer.Option(None, help="Path to write the diff report."),
+    out: str | None = typer.Option(None, help="Path to write the diff report."),
 ) -> None:
     """Deterministically re-run a recorded trace against an alternate policy."""
     typer.echo(f"[stub] would replay {trace} against {policy}")
@@ -170,7 +173,7 @@ def verify(
             LocalEd25519Verifier(trusted_pub_pem).verify(canonical, sig.signature)
         except Exception as exc:
             typer.echo(f"✗ Verification failed: {exc}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from exc
 
     typer.echo(f"✓ Evidence pack verified. Pack ID: {pack_obj.pack_id}")
 

@@ -10,7 +10,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from glasshouse_core.adapters.protocols import ProbeResponse, Stimulus
 
 if TYPE_CHECKING:
-    import httpx
+    pass
 
 
 class HttpProber:

@@ -12,37 +12,40 @@ It is Apache-2.0, protocol-first, and works with whatever you are already using:
 
 ## Status
 
-**Building toward the first demo.** The spec (`glasshouse-spec` v0.1.0) is tagged and frozen. The analysis engine, adapters, and schema layer are built and tested. The probe runner, evidence-pack builder, and CLI are in progress. The first demo will audit the Oz session that built this tool.
+**POC working.** The core pipeline runs end-to-end: a Claude Code session becomes a signed, verifiable evidence pack with an intent–enactment drift score.
 
 What is working today:
-- Trace adapters: OpenTelemetry/OpenInference, LangGraph checkpoints
-- Analysis engine: intent–enactment drift (`compute_drift`), belief-state extraction, counterfactual replay
-- Schema: full Pydantic models mirroring the v0.1 spec; contract tests
+- Trace adapters: Claude Code session JSONL, OpenTelemetry/OpenInference, LangGraph checkpoints
+- Analysis engine: `compute_drift` (intent–enactment drift), belief-state extraction, counterfactual replay
+- Attestation: Ed25519 signing, canonical JSON, evidence-pack builder
+- CLI: `key-gen`, `ingest`, `attest`, `verify` (probe/replay/diff are Phase 4b stubs)
+- 99 tests; `mypy --strict` clean
 
-What is in progress:
-- Probe runner (loader, HTTP prober, scoring, runner)
-- Evidence-pack builder + Ed25519 signer
-- CLI wiring (`glasshouse probe`, `glasshouse attest`, `glasshouse verify`)
-- First probe family: `glasshouse-probes-jailbreak` (5 probes)
+What comes next:
+- T4.9 demo: a real Claude Code session on a sandbox repo, evidence pack published under `demos/`
+- Probe path (Phase 4b): `run_suite`, jailbreak probe family against the testbed
+- More adapters (Phase C): OpenClaw, Hermes
 
-What comes after the first demo:
-- Claude Code, OpenClaw, and Hermes adapters
-- More probe families (coding-agent, browser-use)
-- Multi-tenant embedded mode for agentic SaaS platforms
-
-## The demo
-
-The goal is to run this against the Oz session that built glasshouse itself:
+## The pipeline
 
 ```bash
-glasshouse probe --endpoint <oz-session> \
-    --suite glasshouse-probes-jailbreak/ --out probe-report.json
-glasshouse attest --traces oz-session.jsonl \
-    --probe-results probe-report.json --out evidence-pack.json
+# Generate a signing key
+glasshouse key-gen signing_key
+
+# Ingest a Claude Code session (strip-payloads redacts tool inputs for safety)
+glasshouse ingest --adapter claude-code \
+    --in ~/.claude/projects/<path>/<session>.jsonl \
+    --out trace.json --strip-payloads
+
+# Build a signed evidence pack with drift score
+glasshouse attest --traces trace.json \
+    --signer signing_key \
+    --issuer-name "Your Name" --agent-id claude-code --agent-version 1.0 \
+    --out evidence-pack.json
+
+# Verify the signature
 glasshouse verify evidence-pack.json --public-key signing_key.ed25519.pub
 ```
-
-The resulting `evidence-pack.json` will be committed to this repo under `demos/`. It will show whether Oz drifted from its declared intentions while building the tool that audits it.
 
 ## What this is not
 

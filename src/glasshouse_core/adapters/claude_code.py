@@ -14,7 +14,7 @@ from real sessions that may contain sensitive code.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from glasshouse_core.schema import (
@@ -104,7 +104,11 @@ def _user_steps(event: dict[str, Any], trace_id: str, strip: bool) -> list[Step]
             steps.append(_make_step(event, i, trace_id, Actor.TOOL, None, action, prev=steps))
         return steps
 
-    text = content if isinstance(content, str) else _join_text(content if isinstance(content, list) else [])
+    text = (
+        content
+        if isinstance(content, str)
+        else _join_text(content if isinstance(content, list) else [])
+    )
     action = Action(type=ActionType.UTTERANCE, payload={"text": text})
     return [_make_step(event, 0, trace_id, Actor.USER, None, action)]
 
@@ -159,11 +163,11 @@ def _maybe_redact(value: Any, strip: bool) -> Any:
 
 def _parse_ts(raw: Any) -> datetime:
     if not raw:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
     try:
         return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
     except ValueError:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
 
 class ClaudeCodeTraceAdapter:

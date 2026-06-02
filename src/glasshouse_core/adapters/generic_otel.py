@@ -7,7 +7,7 @@ No OTel SDK dependency is required — spans are processed as plain dicts.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from glasshouse_core.schema import (
@@ -19,6 +19,7 @@ from glasshouse_core.schema import (
     Step,
     Trace,
 )
+
 
 def _infer_flow_type(span_kind: str) -> FlowType:
     """Map openinference.span.kind to FlowType."""
@@ -60,7 +61,7 @@ def _infer_action(span_kind: str, span_name: str, attrs: dict[str, Any]) -> Acti
 def _parse_timestamp(ts: Any) -> datetime:
     """Parse ISO-8601 string or Unix nanoseconds integer into an aware datetime."""
     if isinstance(ts, (int, float)):
-        return datetime.fromtimestamp(ts / 1_000_000_000, tz=timezone.utc)
+        return datetime.fromtimestamp(ts / 1_000_000_000, tz=UTC)
     iso = str(ts).replace("Z", "+00:00")
     return datetime.fromisoformat(iso)
 

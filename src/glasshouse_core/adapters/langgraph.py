@@ -8,7 +8,7 @@ Checkpoint dicts must follow the serialised CheckpointTuple shape (not live obje
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from glasshouse_core.schema import (
@@ -103,7 +103,7 @@ def ingest_checkpoints(checkpoints: list[dict[str, Any]]) -> Trace:
         raise ValueError("checkpoints list must not be empty")
 
     thread_id = _get_thread_id(checkpoints[0])
-    base_time = datetime.now(timezone.utc)
+    base_time = datetime.now(UTC)
     steps = [_build_step(ck, thread_id, base_time) for ck in checkpoints]
 
     return Trace(

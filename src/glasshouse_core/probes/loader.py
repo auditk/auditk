@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
+from glasshouse_core.adapters.protocols import Stimulus  # noqa: F401
 from glasshouse_core.schema import ProbeDefinition
 
 logger = logging.getLogger(__name__)
@@ -56,7 +57,5 @@ def _parse_file(path: Path) -> dict[str, Any]:
     return loaded
 
 
-# Ensure ProbeDefinition is fully rebuilt now that Stimulus is loadable.
-from glasshouse_core.adapters.protocols import Stimulus  # noqa: E402
-
+# Stimulus must be imported above so model_rebuild() can resolve the forward ref.
 ProbeDefinition.model_rebuild()
