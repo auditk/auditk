@@ -158,6 +158,9 @@ def verify(
     from glasshouse_core.schema import EvidencePack
 
     pack_obj = EvidencePack.model_validate(json.loads(Path(pack).read_text()))
+    if not pack_obj.signatures:
+        typer.echo("✗ Verification failed: evidence pack has no signatures")
+        raise typer.Exit(1)
     trusted_pub_pem = Path(public_key).read_text()
     manifest = pack_obj.model_dump(mode="json", exclude={"signatures"})
     canonical = canonicalize(manifest)

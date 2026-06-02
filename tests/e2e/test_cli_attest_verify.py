@@ -113,3 +113,32 @@ def test_verify_fails_on_tampered_pack(tmp_path: Path) -> None:
     )
     assert result.exit_code == 1
     assert "failed" in result.output.lower() or "Verification" in result.output
+
+
+def test_verify_rejects_pack_with_no_signatures(tmp_path: Path) -> None:
+    # Build a pack with signatures removed to confirm verify rejects it.
+    session_file = tmp_path / "session.jsonl"
+    shutil.copy(_FIXTURE, session_file)
+    key_base = str(tmp_path / "signing_key")
+    pub_key = tmp_path / "signing_key.ed25519.pub"
+    runner.invoke(app, ["key-gen", key_base])
+    trace_file = tmp_path / "trace.json"
+    runner.invoke(
+        app,
+        ["ingest", "--adapter", "claude-code", "--in", str(session_file), "--out", str(trace_file)],
+    )
+    pack_file = tmp_path / "evidence-pack.json"
+    runner.invoke(
+        app,
+        [
+            "attest", "--traces", str(trace_file), "--signer", key_base,
+            "--issuer-name", "T", "--agent-id", "a", "--agent-version", "1",
+            "--out", str(pack_file),
+        ],
+    )
+    pack_data = json.loads(pack_file.read_text())
+    pack_data["signatures"] = []
+    pack_file.write_text(json.dumps(pack_data))
+    result = runner.invoke(app, ["verify", str(pack_file), "--public-key", str(pub_key)])
+    assert result.exit_code == 1
+    assert "no signatures" in result.output
