@@ -1,9 +1,14 @@
-"""glasshouse CLI — probe, attest, replay, diff, verify.
+"""glasshouse CLI — key-gen, ingest, attest, verify (probe/replay/diff stubs).
 
-Phase B MVP: command surface and argument shapes are stable; implementations
-are stubs. Subcommands return non-zero exit codes when stub behaviour would
-mask a real failure in CI.
+POC sprint (Phase 4): key-gen, ingest, attest, verify are fully implemented.
+probe, replay, diff remain stubs (Phase 4b).
 """
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Optional
 
 import typer
 
@@ -22,45 +27,108 @@ def version() -> None:
     typer.echo(f"glasshouse-spec {__spec_version__}")
 
 
-@app.command()
-def probe(
-    endpoint: str = typer.Option(..., help="Agent endpoint URL to probe."),
-    suite: str = typer.Option(
-        ..., help="Probe suite identifier, e.g. glasshouse-probes-jailbreak."
-    ),
-    flow: str = typer.Option(
-        "generic", help="Flow type (voice|browser|code|mcp|generic)."
-    ),
-    out: str | None = typer.Option(None, help="Path to write the probe report JSON."),
+@app.command(name="key-gen")
+def key_gen(
+    path: str = typer.Argument(..., help="Base path for key files (no extension)."),
 ) -> None:
-    """Run a probe suite against a deployed agent endpoint."""
-    typer.echo(f"[stub] would probe {endpoint} with suite={suite} flow={flow}")
-    if out:
-        typer.echo(f"[stub] would write report to {out}")
-    raise typer.Exit(0)
+    """Generate an Ed25519 keypair and write .ed25519 and .ed25519.pub files."""
+    from glasshouse_core.attestation.signer import generate_keypair
+
+    priv_path, pub_path = generate_keypair(Path(path))
+    typer.echo(f"Private key: {priv_path}")
+    typer.echo(f"Public key:  {pub_path}")
+
+
+@app.command()
+def ingest(
+    adapter: str = typer.Option(..., help="Adapter name (e.g. claude-code)."),
+    in_file: str = typer.Option(..., "--in", help="Session file to ingest (.jsonl or .json)."),
+    out: str = typer.Option(..., help="Output trace file path."),
+    strip_payloads: bool = typer.Option(False, help="Redact tool inputs and results."),
+) -> None:
+    """Ingest a raw session file and write a normalised Trace JSON."""
+    from glasshouse_core.adapters import get_adapter
+    from glasshouse_core.adapters.claude_code import ClaudeCodeTraceAdapter
+    from glasshouse_core.adapters.protocols import TraceAdapter
+
+    in_path = Path(in_file)
+    if in_path.suffix == ".jsonl":
+        events = [json.loads(line) for line in in_path.read_text().splitlines() if line.strip()]
+    else:
+        events = json.loads(in_path.read_text())
+
+    trace_adapter: TraceAdapter
+    if strip_payloads and adapter == "claude-code":
+        trace_adapter = ClaudeCodeTraceAdapter(strip_payloads=True)
+    else:
+        trace_adapter = get_adapter(adapter)
+
+    trace = trace_adapter.ingest(events)
+    Path(out).write_text(trace.model_dump_json(indent=2))
+    typer.echo(f"Trace written to {out}: {len(trace.steps)} steps")
 
 
 @app.command()
 def attest(
-    traces: str = typer.Option(..., help="Path to a traces.jsonl file."),
-    jurisdiction: str = typer.Option(
-        "", help="Comma-separated jurisdictions, e.g. EU,UK."
-    ),
-    risk_tier: str = typer.Option("limited", help="EU AI Act risk tier."),
-    signer: str = typer.Option(..., help="Path to an Ed25519 signing key."),
+    traces: str = typer.Option(..., help="Path to a trace file (.json or .jsonl)."),
+    signer: str = typer.Option(..., help="Base path to Ed25519 key (no extension)."),
+    issuer_name: str = typer.Option(..., help="Name of the issuing party."),
+    agent_id: str = typer.Option(..., help="Agent configuration reference ID."),
+    agent_version: str = typer.Option(..., help="Agent version string."),
     out: str = typer.Option("evidence-pack.json", help="Output evidence pack path."),
+    jurisdiction: str = typer.Option("", help="Comma-separated jurisdictions, e.g. EU,UK."),
+    risk_tier: str = typer.Option("limited", help="EU AI Act risk tier."),
+    probe_results_file: Optional[str] = typer.Option(None, "--probe-results", help="Path to probe results JSON."),
 ) -> None:
-    """Build a signed evidence pack from traces + probe results."""
-    typer.echo(f"[stub] would attest traces={traces} -> {out}")
-    typer.echo(f"[stub] jurisdiction={jurisdiction} risk_tier={risk_tier} signer={signer}")
-    raise typer.Exit(0)
+    """Build and sign an evidence pack from traces + optional probe results."""
+    from glasshouse_core.attestation.pack import build
+    from glasshouse_core.attestation.signer import LocalEd25519Signer, generate_keypair
+    from glasshouse_core.schema import Issuer, ProbeResult, RiskTier, Subject, Trace
+
+    traces_path = Path(traces)
+    if traces_path.suffix == ".jsonl":
+        trace_list = [
+            Trace.model_validate(json.loads(line))
+            for line in traces_path.read_text().splitlines()
+            if line.strip()
+        ]
+    else:
+        raw = json.loads(traces_path.read_text())
+        trace_list = [Trace.model_validate(raw)] if isinstance(raw, dict) else [
+            Trace.model_validate(item) for item in raw
+        ]
+
+    probe_results: list[ProbeResult] = []
+    if probe_results_file:
+        raw_probes = json.loads(Path(probe_results_file).read_text())
+        probe_results = [ProbeResult.model_validate(r) for r in raw_probes]
+
+    # Resolve private key path; generate if missing
+    priv_key_path = Path(signer).with_suffix(".ed25519")
+    if not priv_key_path.exists():
+        priv_key_path, _ = generate_keypair(Path(signer))
+    signer_obj = LocalEd25519Signer(priv_key_path)
+
+    jurisdictions = [j.strip() for j in jurisdiction.split(",") if j.strip()] if jurisdiction else []
+
+    pack = build(
+        traces=trace_list,
+        probe_results=probe_results,
+        jurisdiction=jurisdictions,
+        risk_tier=RiskTier(risk_tier),
+        issuer=Issuer(name=issuer_name),
+        subject=Subject(agent_config_ref=agent_id, agent_version=agent_version),
+        signer=signer_obj,
+    )
+    Path(out).write_text(pack.model_dump_json(indent=2))
+    typer.echo(f"Evidence pack written to {out}. Pack ID: {pack.pack_id}")
 
 
 @app.command()
 def replay(
     trace: str = typer.Option(..., help="Path to the recorded trace."),
     policy: str = typer.Option(..., help="Alternate policy / prompt file."),
-    out: str | None = typer.Option(None, help="Path to write the diff report."),
+    out: Optional[str] = typer.Option(None, help="Path to write the diff report."),
 ) -> None:
     """Deterministically re-run a recorded trace against an alternate policy."""
     typer.echo(f"[stub] would replay {trace} against {policy}")
@@ -81,12 +149,27 @@ def diff(
 
 @app.command()
 def verify(
-    pack: str = typer.Argument(..., help="Evidence pack to verify."),
-    public_key: str = typer.Option(..., help="Path to the signer's public key."),
+    pack: str = typer.Argument(..., help="Evidence pack file to verify."),
+    public_key: str = typer.Option(..., help="Path to the trusted public key (.ed25519.pub)."),
 ) -> None:
-    """Verify the signature on an evidence pack."""
-    typer.echo(f"[stub] would verify {pack} against {public_key}")
-    raise typer.Exit(0)
+    """Verify all signatures on an evidence pack against a trusted public key."""
+    from glasshouse_core.attestation.canonical import canonicalize
+    from glasshouse_core.attestation.signer import LocalEd25519Verifier
+    from glasshouse_core.schema import EvidencePack
+
+    pack_obj = EvidencePack.model_validate(json.loads(Path(pack).read_text()))
+    trusted_pub_pem = Path(public_key).read_text()
+    manifest = pack_obj.model_dump(mode="json", exclude={"signatures"})
+    canonical = canonicalize(manifest)
+
+    for sig in pack_obj.signatures:
+        try:
+            LocalEd25519Verifier(trusted_pub_pem).verify(canonical, sig.signature)
+        except Exception as exc:
+            typer.echo(f"✗ Verification failed: {exc}")
+            raise typer.Exit(1)
+
+    typer.echo(f"✓ Evidence pack verified. Pack ID: {pack_obj.pack_id}")
 
 
 if __name__ == "__main__":
