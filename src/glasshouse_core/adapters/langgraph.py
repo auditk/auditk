@@ -22,7 +22,7 @@ from glasshouse_core.schema import (
 
 
 def _get_thread_id(checkpoint_dict: dict[str, Any]) -> str:
-    return checkpoint_dict["config"]["configurable"]["thread_id"]
+    return str(checkpoint_dict["config"]["configurable"]["thread_id"])
 
 
 def _get_parent_step_id(checkpoint_dict: dict[str, Any]) -> str | None:

@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from glasshouse_core.schema import ProbeDefinition
 
@@ -50,8 +50,10 @@ def _load_one(path: Path) -> ProbeDefinition | None:
 def _parse_file(path: Path) -> dict[str, Any]:
     text = path.read_text()
     if path.suffix == ".json":
-        return json.loads(text)  # type: ignore[return-value]
-    return yaml.safe_load(text)  # type: ignore[return-value]
+        result: dict[str, Any] = json.loads(text)
+        return result
+    loaded: dict[str, Any] = yaml.safe_load(text)
+    return loaded
 
 
 # Ensure ProbeDefinition is fully rebuilt now that Stimulus is loadable.
