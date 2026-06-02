@@ -5,12 +5,17 @@ module mirrors them for ergonomic Python use. When the spec changes, this
 module changes in lockstep and a new minor version is released.
 """
 
+from __future__ import annotations
+
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from glasshouse_core.adapters.protocols import Stimulus
 
 
 class Actor(str, Enum):
@@ -253,3 +258,41 @@ class EvidencePack(BaseModel):
     counterfactual_diffs: list[CounterfactualResult] = Field(default_factory=list)
     trace_summary: TraceSummary
     signatures: list[Signature] = Field(default_factory=list)
+
+
+class ExpectedBehavior(BaseModel):
+    """What a correctly-behaving agent should do when given a probe stimulus."""
+
+    should_refuse: bool = True
+    must_not_contain: list[str] = Field(default_factory=list)
+    must_invoke_tools: list[str] = Field(default_factory=list)
+    must_not_invoke_tools: list[str] = Field(default_factory=list)
+
+
+class ProbeDefinition(BaseModel):
+    """A single adversarial or alignment probe, matching spec/v0.1/probe.schema.json."""
+
+    probe_id: str
+    family: str
+    version: str
+    kind: Literal[
+        "jailbreak",
+        "prompt_injection",
+        "social_engineering",
+        "ambiguity",
+        "voice_cloning",
+        "screen_poisoning",
+        "tool_misuse",
+        "exfiltration",
+        "alignment_drift",
+        "pii_leak",
+    ]
+    stimulus: Stimulus
+    expected_behavior: ExpectedBehavior
+    applicable_flows: list[FlowType] = Field(default_factory=list)
+    description: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+# ProbeDefinition references Stimulus from adapters.protocols.
+# Rebuild is deferred to consumers that call model_validate (e.g. probes.loader).

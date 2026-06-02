@@ -7,20 +7,115 @@ It is written for a less-capable executing model. Follow it exactly.
 Do not add features, do not refactor existing code, do not deviate from the file
 paths and function signatures given here.
 
-## Goal
+## REVISION 2026-06-02 — attest-first POC
 
-`glasshouse probe → attest → verify` works end-to-end against a real endpoint.
-The exit criterion is: the three commands above run successfully against a local
-test server and produce a verifiable `evidence-pack.json`.
+The original plan was probe-first (`probe → attest → verify` against a live endpoint).
+That is now **deferred to Phase 4b**. Probing needs a live target and the v0 scoring
+heuristic is weak. The POC is re-pointed at the **attest/drift** path, which reuses
+the already-built adapters and analysis engine and is fully deterministic.
 
-## Non-goals (do NOT build these)
+**New goal:** ingest a real, reproducible **Claude Code** session, compute drift +
+belief-state, and emit a **signed evidence pack** that `glasshouse verify` accepts.
+
+```
+Claude Code session JSONL → claude-code adapter → drift + belief-state
+    → signed evidence pack → verify
+```
+
+No probes, no live endpoint, no network. Exit criterion: a published, verifiable
+`evidence-pack.json` under `demos/` built from a real Claude Code session.
+
+### Revised task sequence (supersedes the probe-first ordering below)
+
+- **T4.5** — `attestation/canonical.py` + `attestation/signer.py` (Ed25519). Code is pre-written below.
+- **T4.6** — `attestation/pack.py` — `build(...)` with `probe_results` defaulting to `[]`. Code pre-written below.
+- **T4.7 (PRIORITY, NEW)** — `adapters/claude_code.py` — Claude Code session JSONL → `Trace`. The demo substrate. Detailed below.
+- **T4.8** — CLI: wire `glasshouse attest`, `glasshouse verify`, `glasshouse key-gen`. `probe` stays a stub for the POC.
+- **T4.9** — Reproducible demo: scripted Claude Code task on a **sandbox/public repo**, capture the session, attest, publish pack + README under `demos/`.
+
+### De-risking order
+
+Prove the attestation plumbing (T4.5/T4.6 + CLI) against the **existing LangGraph
+testbed trace** first — zero new adapter, instant validation — then layer the
+Claude Code adapter (T4.7) as the public demo substrate.
+
+### Privacy guardrail (MANDATORY)
+
+Real Claude Code sessions under `~/.claude/projects/` contain private code
+(FintechFreddy, Narwhal, etc.). The demo MUST run on a throwaway/public sandbox
+repo with a benign scripted task. The adapter MUST support a `strip_payloads`
+mode that replaces tool inputs and tool-result contents with a redaction marker
+(keeping names, types, structure, and timing). Any published trace or evidence
+pack MUST be reviewed for sensitive content before commit.
+
+### Claude Code session format (verified 2026-06-02)
+
+JSONL, one event per line. Event types: `user`, `assistant`, `system`,
+`attachment`, `file-history-snapshot`, `last-prompt`, `permission-mode`.
+Substantive events (`user`, `assistant`) carry: `uuid`, `parentUuid`, `sessionId`,
+`timestamp` (ISO-8601), `cwd`, `gitBranch`, `type`, `message`.
+- assistant `message.content` is a list of blocks: `thinking`, `text`, `tool_use`
+  (`tool_use` keys: `id`, `name`, `input`, `type`, `caller`).
+- user `message.content` is either a string (plain prompt) or a list of blocks
+  (`text`, `tool_result`). User events with a `toolUseResult` dict are tool results.
+
+## Non-goals (do NOT build these in the POC)
 
 - PDF render
-- `glasshouse replay` or `glasshouse diff` CLI commands (keep as stubs)
+- `glasshouse probe`, `replay`, `diff` CLI commands (keep as stubs; probe is Phase 4b)
+- Probe runner (`run_suite`), the 5 jailbreak probes, `glasshouse-probes-jailbreak` repo (all Phase 4b)
 - Compliance crosswalk templates (EU AI Act, FCA)
 - `llm_judge` scoring
 - Precision/recall benchmark numbers
-- The Oz demo itself (T4.9 is a manual step done by Matt, not code)
+
+### Already built and PARKED for Phase 4b (do not remove)
+
+`probes/loader.py`, `probes/http_prober.py`, `probes/scoring.py`, and the
+`ProbeDefinition`/`ExpectedBehavior` schema models are already implemented and
+tested on this branch. Leave them in place; they become Phase 4b when probing resumes.
+
+## T4.7 (NEW, PRIORITY) — Claude Code adapter
+
+File: `src/glasshouse_core/adapters/claude_code.py`. Register as `claude-code`.
+
+### Function signatures
+
+```python
+def ingest_claude_code_session(
+    events: list[dict[str, Any]],
+    strip_payloads: bool = False,
+) -> Trace: ...
+
+class ClaudeCodeTraceAdapter:
+    def __init__(self, strip_payloads: bool = False) -> None: ...
+    def ingest(self, raw: Any) -> Trace: ...
+```
+
+### Mapping rules
+
+- Skip non-substantive event types: `system`, `attachment`, `file-history-snapshot`, `last-prompt`, `permission-mode`. Process only `user` and `assistant`.
+- `trace_id` = first substantive event's `sessionId`; `flow_type` = `code`; `agent_config_ref` = `"claude-code:" + sessionId`; `source_adapter` = `"claude-code"`.
+- An event may expand to multiple Steps (one per relevant content block). Step id = event `uuid` for the first emitted step, then `f"{uuid}-{i}"` for subsequent blocks. First emitted step's `parent_step_id` = event `parentUuid`; later steps chain to the previous emitted step id.
+- assistant event: join `text` blocks into `narration`. For each `tool_use` block emit a `tool_call` Step (payload `{"name", "input"}`); the FIRST tool_use Step gets `declared_intent = narration`, others get `None`. If there are no `tool_use` blocks, emit one `utterance` Step with `declared_intent = narration` and payload `{"text": narration}`. Ignore `thinking` blocks for actions (optionally stash in metadata).
+- user event with string content: one `utterance` Step, actor `user`.
+- user event whose content list contains `tool_result` blocks (or has a `toolUseResult`): one `env_effect` Step per tool_result, actor `tool`, payload `{"tool_result": <summary>}`.
+- `timestamp`: parse the event ISO-8601 `timestamp`; fall back to `datetime.now(timezone.utc)`.
+- `context_used`: empty list for v0.
+- `strip_payloads=True`: replace tool_use `input` and tool_result content with `{"redacted": true, "size": <int>}`, keeping tool names, types, and timing. Use for publishing packs built from real sessions.
+
+### Fixtures + tests
+
+`tests/fixtures/claude_code/` — 3 synthetic (non-sensitive) session JSONL files:
+`session-text-only.jsonl`, `session-tool-use.jsonl`, `session-intent-action.jsonl`.
+`tests/integration/test_claude_code_adapter.py` asserts: produced `Trace` validates
+against `spec/v0.1/trace.schema.json`; step counts; `declared_intent` extraction;
+`tool_call` action present; `strip_payloads=True` redacts inputs.
+
+### Acceptance
+
+- Adapter importable; `get_adapter("claude-code")` returns it.
+- All produced traces validate against the spec schema.
+- `strip_payloads` redaction verified by test.
 
 ## Starting state
 

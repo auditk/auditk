@@ -1,3 +1,4 @@
+from glasshouse_core.adapters.claude_code import ClaudeCodeTraceAdapter
 from glasshouse_core.adapters.generic_otel import OtelTraceAdapter
 from glasshouse_core.adapters.langgraph import LangGraphTraceAdapter
 from glasshouse_core.adapters.protocols import TraceAdapter
@@ -5,6 +6,7 @@ from glasshouse_core.adapters.protocols import TraceAdapter
 _REGISTRY: dict[str, TraceAdapter] = {
     "generic-otel": OtelTraceAdapter(),
     "langgraph": LangGraphTraceAdapter(),
+    "claude-code": ClaudeCodeTraceAdapter(),
 }
 
 
