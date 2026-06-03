@@ -1,4 +1,4 @@
-"""glasshouse CLI — key-gen, ingest, attest, verify (probe/replay/diff stubs).
+"""auditk CLI — key-gen, ingest, attest, verify (probe/replay/diff stubs).
 
 POC sprint (Phase 4): key-gen, ingest, attest, verify are fully implemented.
 probe, replay, diff remain stubs (Phase 4b).
@@ -14,16 +14,16 @@ import typer
 from auditk import __spec_version__, __version__
 
 app = typer.Typer(
-    help="glasshouse — the open standard for agent alignment evidence.",
+    help="auditk — the open standard for agent alignment evidence.",
     no_args_is_help=True,
 )
 
 
 @app.command()
 def version() -> None:
-    """Show glasshouse-core and glasshouse-spec versions."""
-    typer.echo(f"glasshouse-core {__version__}")
-    typer.echo(f"glasshouse-spec {__spec_version__}")
+    """Show auditk and auditk-spec versions."""
+    typer.echo(f"auditk {__version__}")
+    typer.echo(f"auditk-spec {__spec_version__}")
 
 
 @app.command(name="key-gen")
