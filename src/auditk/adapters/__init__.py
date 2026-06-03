@@ -1,9 +1,9 @@
-"""glasshouse_core.adapters — pluggable boundary protocols.
+"""auditk.adapters — pluggable boundary protocols.
 
 Import the five Protocol classes and the two shared value objects from here.
 """
 
-from glasshouse_core.adapters.protocols import (
+from auditk.adapters.protocols import (
     AgentConfigLoader,
     EndpointProber,
     EvidenceStore,
@@ -12,8 +12,8 @@ from glasshouse_core.adapters.protocols import (
     Stimulus,
     TraceAdapter,
 )
-from glasshouse_core.adapters.registry import _REGISTRY as REGISTRY
-from glasshouse_core.adapters.registry import get_adapter
+from auditk.adapters.registry import _REGISTRY as REGISTRY
+from auditk.adapters.registry import get_adapter
 
 __all__ = [
     "AgentConfigLoader",

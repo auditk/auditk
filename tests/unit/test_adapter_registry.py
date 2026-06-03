@@ -2,7 +2,7 @@
 
 import pytest
 
-from glasshouse_core.adapters import get_adapter
+from auditk.adapters import get_adapter
 
 
 def test_get_adapter_generic_otel_has_ingest():

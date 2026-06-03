@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from glasshouse_core.probes.loader import load_probes
+from auditk.probes.loader import load_probes
 
 
 @pytest.fixture
@@ -60,7 +60,7 @@ def test_load_valid_probe_returns_one_result(tmp_fixture_dir: Path) -> None:
 
 def test_load_invalid_probe_is_skipped_with_warning(caplog, tmp_fixture_dir: Path) -> None:
     import logging
-    with caplog.at_level(logging.WARNING, logger="glasshouse_core.probes.loader"):
+    with caplog.at_level(logging.WARNING, logger="auditk.probes.loader"):
         probes = load_probes(tmp_fixture_dir)
     assert len(probes) == 1
     assert any("Skipping invalid-probe.yaml" in rec.message for rec in caplog.records)

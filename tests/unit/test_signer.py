@@ -1,10 +1,10 @@
-"""Tests for glasshouse_core.attestation.signer."""
+"""Tests for auditk.attestation.signer."""
 
 import pytest
 from cryptography.exceptions import InvalidSignature
 
-from glasshouse_core.attestation.canonical import canonicalize
-from glasshouse_core.attestation.signer import (
+from auditk.attestation.canonical import canonicalize
+from auditk.attestation.signer import (
     LocalEd25519Signer,
     LocalEd25519Verifier,
     generate_keypair,

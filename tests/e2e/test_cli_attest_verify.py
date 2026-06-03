@@ -8,7 +8,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from glasshouse_core.cli import app
+from auditk.cli import app
 
 _FIXTURE = (
     Path(__file__).parent.parent

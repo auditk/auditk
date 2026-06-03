@@ -54,7 +54,7 @@ when either convention stabilises.
 - [ ] Harden `verify` to reject empty-signature packs
 - [ ] `.gitignore` excludes keys/packs (confirm `*.ed25519`, `evidence-pack*.json`)
 - [ ] Pin / declare Python version support; ensure `pip install -e .` clean
-- [ ] Decide public-org transfer (`glasshouse-project`) vs stay private
+- [ ] Decide public-org transfer (`auditk`) vs stay private
 
 ## Status
 

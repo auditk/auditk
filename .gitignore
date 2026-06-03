@@ -40,4 +40,4 @@ Thumbs.db
 *.ed25519.pub
 evidence-packs/
 evidence-pack*.json
-.glasshouse-cache/
+.auditk-cache/

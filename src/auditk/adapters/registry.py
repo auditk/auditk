@@ -1,7 +1,7 @@
-from glasshouse_core.adapters.claude_code import ClaudeCodeTraceAdapter
-from glasshouse_core.adapters.generic_otel import OtelTraceAdapter
-from glasshouse_core.adapters.langgraph import LangGraphTraceAdapter
-from glasshouse_core.adapters.protocols import TraceAdapter
+from auditk.adapters.claude_code import ClaudeCodeTraceAdapter
+from auditk.adapters.generic_otel import OtelTraceAdapter
+from auditk.adapters.langgraph import LangGraphTraceAdapter
+from auditk.adapters.protocols import TraceAdapter
 
 _REGISTRY: dict[str, TraceAdapter] = {
     "generic-otel": OtelTraceAdapter(),

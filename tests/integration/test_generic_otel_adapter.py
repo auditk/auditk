@@ -17,8 +17,8 @@ from typing import Any
 import jsonschema
 import pytest
 
-from glasshouse_core.adapters.generic_otel import OtelTraceAdapter, ingest_otel_spans
-from glasshouse_core.schema import Trace
+from auditk.adapters.generic_otel import OtelTraceAdapter, ingest_otel_spans
+from auditk.schema import Trace
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "otel"
 _SPEC_PATH = Path(os.environ.get("GLASSHOUSE_SPEC_PATH", "../glasshouse-spec"))

@@ -5,9 +5,9 @@ from uuid import uuid4
 
 from typer.testing import CliRunner
 
-from glasshouse_core import __spec_version__, __version__
-from glasshouse_core.cli import app
-from glasshouse_core.schema import (
+from auditk import __spec_version__, __version__
+from auditk.cli import app
+from auditk.schema import (
     Action,
     ActionType,
     Actor,

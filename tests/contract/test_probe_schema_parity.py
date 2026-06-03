@@ -7,8 +7,8 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from glasshouse_core.adapters.protocols import Stimulus
-from glasshouse_core.schema import ExpectedBehavior, FlowType, ProbeDefinition
+from auditk.adapters.protocols import Stimulus
+from auditk.schema import ExpectedBehavior, FlowType, ProbeDefinition
 
 _SPEC_PATH = Path(os.environ.get("GLASSHOUSE_SPEC_PATH", "../glasshouse-spec"))
 _SCHEMA_FILE = _SPEC_PATH / "spec" / "v0.1" / "probe.schema.json"

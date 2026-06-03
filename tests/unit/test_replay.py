@@ -7,7 +7,7 @@ from datetime import datetime
 
 import pytest
 
-from glasshouse_core.schema import (
+from auditk.schema import (
     Action,
     ActionType,
     Actor,
@@ -80,7 +80,7 @@ def test_divergence_at_third_step() -> None:
             return Action(type=ActionType.UTTERANCE, payload={"text": "alternate"})
         return step.action
 
-    from glasshouse_core.analysis.replay import replay
+    from auditk.analysis.replay import replay
 
     result = replay(trace, policy)
 
@@ -102,7 +102,7 @@ def test_divergence_at_all_steps() -> None:
     def always_different(step: Step) -> Action:
         return Action(type=ActionType.TOOL_CALL, payload={"name": "override"})
 
-    from glasshouse_core.analysis.replay import replay
+    from auditk.analysis.replay import replay
 
     result = replay(trace, always_different)
 
@@ -135,7 +135,7 @@ def test_diff_summary_is_valid_json() -> None:
             return Action(type=ActionType.STATE_TRANSITION, payload={"alt": True})
         return step.action
 
-    from glasshouse_core.analysis.replay import replay
+    from auditk.analysis.replay import replay
 
     result = replay(trace, diverge_at_s1)
 
@@ -160,6 +160,6 @@ def test_original_trace_id_set_correctly() -> None:
 
 
 def _replay_same_policy(trace: Trace) -> CounterfactualResult:
-    from glasshouse_core.analysis.replay import replay
+    from auditk.analysis.replay import replay
 
     return replay(trace, lambda step: step.action)

@@ -1,10 +1,10 @@
 [project]
-name = "glasshouse-core"
+name = "auditk"
 version = "0.0.1"
-description = "Python reference implementation of glasshouse-spec — the open standard for agent alignment evidence."
+description = "Python reference implementation of auditk-spec — the open standard for agent alignment evidence."
 authors = [
     { name = "Matt Haiko" },
-    { name = "The glasshouse Project Contributors" },
+    { name = "The auditk Project Contributors" },
 ]
 license = { text = "Apache-2.0" }
 readme = "README.md"
@@ -58,19 +58,19 @@ otel = [
 pdf = ["weasyprint>=62.0"]
 
 [project.urls]
-Homepage = "https://github.com/haikomatt/glasshouse-core"
-Spec = "https://github.com/haikomatt/glasshouse-spec"
-Issues = "https://github.com/haikomatt/glasshouse-core/issues"
+Homepage = "https://github.com/haikomatt/auditk"
+Spec = "https://github.com/haikomatt/auditk-spec"
+Issues = "https://github.com/haikomatt/auditk/issues"
 
 [project.scripts]
-glasshouse = "glasshouse_core.cli:app"
+auditk = "auditk.cli:app"
 
 [build-system]
 requires = ["hatchling>=1.20"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/glasshouse_core"]
+packages = ["src/auditk"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

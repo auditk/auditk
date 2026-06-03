@@ -6,8 +6,8 @@ import httpx
 import pytest
 import respx
 
-from glasshouse_core.adapters.protocols import Stimulus
-from glasshouse_core.probes.http_prober import HttpProber
+from auditk.adapters.protocols import Stimulus
+from auditk.probes.http_prober import HttpProber
 
 
 @respx.mock

@@ -1,12 +1,12 @@
-# glasshouse-core
+# auditk
 
-> Python reference implementation of [`glasshouse-spec`](https://github.com/haikomatt/glasshouse-spec) — the open standard for agent alignment evidence.
+> Python reference implementation of [`auditk-spec`](https://github.com/haikomatt/auditk-spec) — the open standard for agent alignment evidence.
 
 ## What this is
 
 Coding agents (Oz, Claude Code, OpenClaw, Hermes, Cursor, Devin) have shell access, edit your files, and push to your repos. They are the most consequential agentic systems deployed today. Nobody is auditing them.
 
-`glasshouse` audits them. It runs adversarial probes against a deployed agent, measures whether the agent's actions matched its declared intentions (intent–enactment drift), and produces a **signed, portable evidence pack** — a self-describing JSON artefact you can version-control, hand to a security team, or attach to a compliance record.
+`auditk` audits them. It runs adversarial probes against a deployed agent, measures whether the agent's actions matched its declared intentions (intent–enactment drift), and produces a **signed, portable evidence pack** — a self-describing JSON artefact you can version-control, hand to a security team, or attach to a compliance record.
 
 It is Apache-2.0, protocol-first, and works with whatever you are already using: LangSmith, Langfuse, Phoenix, raw OTel, or nothing at all.
 
@@ -55,7 +55,7 @@ glasshouse verify evidence-pack.json --public-key signing_key.ed25519.pub
 
 ## Architecture
 
-See [`glasshouse-spec`](https://github.com/haikomatt/glasshouse-spec) for the protocol. Key principles:
+See [`auditk-spec`](https://github.com/haikomatt/auditk-spec) for the protocol. Key principles:
 
 - **Pure-functional core.** Analysis takes traces + config + probe spec, returns findings. No global state. No I/O.
 - **Adapter pattern at every boundary.** Trace ingestion, config loading, endpoint probing, signing, evidence storage — all pluggable Python protocols.

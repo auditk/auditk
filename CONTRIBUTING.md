@@ -1,4 +1,4 @@
-# Contributing to glasshouse-core
+# Contributing to auditk
 
 Thank you for considering a contribution. This is an Apache-2.0 open-source project.
 
@@ -11,8 +11,8 @@ Thank you for considering a contribution. This is an Apache-2.0 open-source proj
 ## Development setup
 
 ```bash
-git clone https://github.com/haikomatt/glasshouse-core
-cd glasshouse-core
+git clone https://github.com/haikomatt/auditk
+cd auditk
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 pytest                          # 98+ tests, should be green
@@ -48,7 +48,7 @@ Co-Authored-By: Your Name <you@example.com>
 - Do not add Python dependencies not already in `pyproject.toml` without
   a discussion in the PR/issue first.
 
-## Probe families (`glasshouse-probes-*`)
+## Probe families (`auditk-probes-*`)
 
 Probe definition YAML files are dual-licensed **Apache-2.0 / CC-BY-SA-4.0**.
 Add the following SPDX comment to the top of each YAML file:
@@ -57,10 +57,10 @@ Add the following SPDX comment to the top of each YAML file:
 # SPDX-License-Identifier: Apache-2.0 AND CC-BY-SA-4.0
 ```
 
-## Spec changes (`glasshouse-spec`)
+## Spec changes (`auditk-spec`)
 
 The v0.1 schemas under `spec/v0.1/` are frozen. Changes require an RFC issue
-against the `glasshouse-spec` repo and a new versioned directory (`v0.2/`).
+against the `auditk-spec` repo and a new versioned directory (`v0.2/`).
 Do not modify frozen schemas.
 
 ## License

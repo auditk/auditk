@@ -12,11 +12,11 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from glasshouse_core.adapters.claude_code import (
+from auditk.adapters.claude_code import (
     ClaudeCodeTraceAdapter,
     ingest_claude_code_session,
 )
-from glasshouse_core.schema import ActionType, Actor
+from auditk.schema import ActionType, Actor
 
 _FIXTURES = Path(__file__).parent.parent / "fixtures" / "claude_code"
 _SPEC_PATH = Path(os.environ.get("GLASSHOUSE_SPEC_PATH", "../glasshouse-spec"))

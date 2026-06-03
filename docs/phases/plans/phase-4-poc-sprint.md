@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is a self-contained execution plan for Phase 4 of `glasshouse-core`.
+This document is a self-contained execution plan for Phase 4 of `auditk`.
 It is written for a less-capable executing model. Follow it exactly.
 Do not add features, do not refactor existing code, do not deviate from the file
 paths and function signatures given here.
@@ -63,7 +63,7 @@ Substantive events (`user`, `assistant`) carry: `uuid`, `parentUuid`, `sessionId
 
 - PDF render
 - `glasshouse probe`, `replay`, `diff` CLI commands (keep as stubs; probe is Phase 4b)
-- Probe runner (`run_suite`), the 5 jailbreak probes, `glasshouse-probes-jailbreak` repo (all Phase 4b)
+- Probe runner (`run_suite`), the 5 jailbreak probes, `auditk-probes-jailbreak` repo (all Phase 4b)
 - Compliance crosswalk templates (EU AI Act, FCA)
 - `llm_judge` scoring
 - Precision/recall benchmark numbers
@@ -76,7 +76,7 @@ tested on this branch. Leave them in place; they become Phase 4b when probing re
 
 ## T4.7 (NEW, PRIORITY) — Claude Code adapter
 
-File: `src/glasshouse_core/adapters/claude_code.py`. Register as `claude-code`.
+File: `src/auditk/adapters/claude_code.py`. Register as `claude-code`.
 
 ### Function signatures
 
@@ -119,13 +119,13 @@ against `spec/v0.1/trace.schema.json`; step counts; `declared_intent` extraction
 
 ## Starting state
 
-- Repo: `~/Projects/glasshouse-core`, `main @ 0d1be5d`
+- Repo: `~/Projects/auditk`, `main @ 0d1be5d`
 - 68 tests passing
-- `src/glasshouse_core/schema.py` — Pydantic models (Trace, EvidencePack, etc.)
-- `src/glasshouse_core/adapters/` — protocols, OTel adapter, LangGraph adapter, registry
-- `src/glasshouse_core/analysis/` — drift, belief_state, replay
-- `src/glasshouse_core/cli.py` — stub CLI (probe/attest/replay/diff/verify all stub)
-- `glasshouse-spec` at `~/Projects/glasshouse-spec`, `main @ 47ab56b`, v0.1.0 tagged
+- `src/auditk/schema.py` — Pydantic models (Trace, EvidencePack, etc.)
+- `src/auditk/adapters/` — protocols, OTel adapter, LangGraph adapter, registry
+- `src/auditk/analysis/` — drift, belief_state, replay
+- `src/auditk/cli.py` — stub CLI (probe/attest/replay/diff/verify all stub)
+- `auditk-spec` at `~/Projects/auditk-spec`, `main @ 47ab56b`, v0.1.0 tagged
   - `spec/v0.1/probe.schema.json` exists and is the normative source for probe validation
 
 ## Branch
@@ -182,11 +182,11 @@ Co-Authored-By: Oz <oz-agent@warp.dev>
 
 ### What to do
 
-Add `ProbeDefinition` and `ExpectedBehavior` to `src/glasshouse_core/schema.py`.
+Add `ProbeDefinition` and `ExpectedBehavior` to `src/auditk/schema.py`.
 
 ### Exact code to add
 
-Append the following to `src/glasshouse_core/schema.py` after the `EvidencePack` class:
+Append the following to `src/auditk/schema.py` after the `EvidencePack` class:
 
 ```python
 class ExpectedBehavior(BaseModel):
@@ -223,7 +223,7 @@ class ProbeDefinition(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 ```
 
-`Stimulus` is already defined in `src/glasshouse_core/adapters/protocols.py`.
+`Stimulus` is already defined in `src/auditk/adapters/protocols.py`.
 Import it at the top of the class with a `TYPE_CHECKING` guard to avoid circular imports:
 
 ```python
@@ -232,7 +232,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from glasshouse_core.adapters.protocols import Stimulus
+    from auditk.adapters.protocols import Stimulus
 ```
 
 Then call `model_rebuild()` at module level after defining `ProbeDefinition`:
@@ -255,15 +255,15 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from glasshouse_core.adapters.protocols import Stimulus
-from glasshouse_core.schema import ExpectedBehavior, FlowType, ProbeDefinition
+from auditk.adapters.protocols import Stimulus
+from auditk.schema import ExpectedBehavior, FlowType, ProbeDefinition
 
-_SPEC_PATH = Path(os.environ.get("GLASSHOUSE_SPEC_PATH", "../glasshouse-spec"))
+_SPEC_PATH = Path(os.environ.get("GLASSHOUSE_SPEC_PATH", "../auditk-spec"))
 _SCHEMA_FILE = _SPEC_PATH / "spec" / "v0.1" / "probe.schema.json"
 
 if not _SPEC_PATH.exists():
     pytest.skip(
-        f"glasshouse-spec not found at {_SPEC_PATH}",
+        f"auditk-spec not found at {_SPEC_PATH}",
         allow_module_level=True,
     )
 
@@ -300,7 +300,7 @@ def test_probe_definition_importable() -> None:
 ### Acceptance
 
 - `pytest tests/contract/test_probe_schema_parity.py` passes (2 tests)
-- `from glasshouse_core.schema import ProbeDefinition, ExpectedBehavior` works
+- `from auditk.schema import ProbeDefinition, ExpectedBehavior` works
 
 ### Commit message file `/tmp/t41-msg.txt`
 
@@ -319,12 +319,12 @@ Co-Authored-By: Oz <oz-agent@warp.dev>
 
 ### What to do
 
-Create `src/glasshouse_core/probes/__init__.py` (empty) and
-`src/glasshouse_core/probes/loader.py`.
+Create `src/auditk/probes/__init__.py` (empty) and
+`src/auditk/probes/loader.py`.
 
 ### Exact code
 
-`src/glasshouse_core/probes/loader.py`:
+`src/auditk/probes/loader.py`:
 
 ```python
 """Load ProbeDefinition objects from YAML or JSON files on disk."""
@@ -338,7 +338,7 @@ from typing import Any
 
 import yaml
 
-from glasshouse_core.schema import ProbeDefinition
+from auditk.schema import ProbeDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -407,7 +407,7 @@ Or just create them inline with `tmp_path.joinpath(...).write_text(...)`.
 
 - 3 tests pass
 - Invalid file is skipped, not raised
-- `from glasshouse_core.probes.loader import load_probes` works
+- `from auditk.probes.loader import load_probes` works
 
 ### Commit message file `/tmp/t42-msg.txt`
 
@@ -426,7 +426,7 @@ Co-Authored-By: Oz <oz-agent@warp.dev>
 
 ### What to do
 
-Create `src/glasshouse_core/probes/http_prober.py`.
+Create `src/auditk/probes/http_prober.py`.
 
 ### Exact code
 
@@ -440,7 +440,7 @@ from typing import TYPE_CHECKING, Any
 
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from glasshouse_core.adapters.protocols import ProbeResponse, Stimulus
+from auditk.adapters.protocols import ProbeResponse, Stimulus
 
 if TYPE_CHECKING:
     import httpx
@@ -496,8 +496,8 @@ Use `respx` to mock the httpx calls. Write four tests:
 import respx
 import httpx
 import pytest
-from glasshouse_core.adapters.protocols import Stimulus
-from glasshouse_core.probes.http_prober import HttpProber
+from auditk.adapters.protocols import Stimulus
+from auditk.probes.http_prober import HttpProber
 
 
 @respx.mock
@@ -514,7 +514,7 @@ def test_successful_post_returns_probe_response():
 ### Acceptance
 
 - 4 tests pass
-- `from glasshouse_core.probes.http_prober import HttpProber` works
+- `from auditk.probes.http_prober import HttpProber` works
 
 ### Commit message file `/tmp/t43-msg.txt`
 
@@ -534,8 +534,8 @@ Co-Authored-By: Oz <oz-agent@warp.dev>
 ### What to do
 
 Create two files:
-- `src/glasshouse_core/probes/scoring.py`
-- `src/glasshouse_core/probes/runner.py`
+- `src/auditk/probes/scoring.py`
+- `src/auditk/probes/runner.py`
 
 ### Exact code — scoring.py
 
@@ -567,9 +567,9 @@ Note: `tool_call_check` and `llm_judge` are explicitly out of scope for this pha
 
 from __future__ import annotations
 
-from glasshouse_core.adapters.protocols import EndpointProber
-from glasshouse_core.probes.scoring import keyword_match, regex_match
-from glasshouse_core.schema import ProbeDefinition, ProbeResult
+from auditk.adapters.protocols import EndpointProber
+from auditk.probes.scoring import keyword_match, regex_match
+from auditk.schema import ProbeDefinition, ProbeResult
 
 
 def run_suite(
@@ -634,7 +634,7 @@ class MockProber:
     def __init__(self, text: str):
         self._text = text
     def send(self, stimulus):
-        from glasshouse_core.adapters.protocols import ProbeResponse
+        from auditk.adapters.protocols import ProbeResponse
         return ProbeResponse(text=self._text, raw={}, latency_ms=0.0)
 
 def test_run_suite_returns_one_result_per_probe(): ...
@@ -645,7 +645,7 @@ def test_probe_fails_when_response_contains_forbidden_word(): ...
 ### Acceptance
 
 - 7 tests pass (4 scoring + 3 runner)
-- `from glasshouse_core.probes.runner import run_suite` works
+- `from auditk.probes.runner import run_suite` works
 
 ### Commit message file `/tmp/t44-msg.txt`
 
@@ -666,9 +666,9 @@ Co-Authored-By: Oz <oz-agent@warp.dev>
 ### What to do
 
 Create:
-- `src/glasshouse_core/attestation/__init__.py` (empty)
-- `src/glasshouse_core/attestation/canonical.py`
-- `src/glasshouse_core/attestation/signer.py`
+- `src/auditk/attestation/__init__.py` (empty)
+- `src/auditk/attestation/canonical.py`
+- `src/auditk/attestation/signer.py`
 
 ### Exact code — canonical.py
 
@@ -707,7 +707,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PublicKey,
 )
 
-from glasshouse_core.schema import Signature
+from auditk.schema import Signature
 
 
 def generate_keypair(path: Path) -> tuple[Path, Path]:
@@ -793,8 +793,8 @@ def test_signature_has_correct_algorithm_field(tmp_path): ...
 ### Acceptance
 
 - 7 tests pass (3 canonical + 4 signer)
-- `from glasshouse_core.attestation.signer import LocalEd25519Signer, LocalEd25519Verifier, generate_keypair` works
-- `from glasshouse_core.attestation.canonical import canonicalize` works
+- `from auditk.attestation.signer import LocalEd25519Signer, LocalEd25519Verifier, generate_keypair` works
+- `from auditk.attestation.canonical import canonicalize` works
 
 ### Commit message file `/tmp/t45-msg.txt`
 
@@ -815,7 +815,7 @@ Co-Authored-By: Oz <oz-agent@warp.dev>
 
 ### What to do
 
-Create `src/glasshouse_core/attestation/pack.py`.
+Create `src/auditk/attestation/pack.py`.
 
 ### Exact code
 
@@ -827,10 +827,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from glasshouse_core.adapters.protocols import Signer
-from glasshouse_core.analysis.drift import compute_drift
-from glasshouse_core.attestation.canonical import canonicalize
-from glasshouse_core.schema import (
+from auditk.adapters.protocols import Signer
+from auditk.analysis.drift import compute_drift
+from auditk.attestation.canonical import canonicalize
+from auditk.schema import (
     EvidencePack,
     FlowType,
     Issuer,
@@ -905,7 +905,7 @@ Use a `FakeSigner` that returns a fixed `Signature` without doing real crypto,
 so the test doesn't depend on key files.
 
 ```python
-from glasshouse_core.schema import Signature
+from auditk.schema import Signature
 from datetime import datetime, timezone
 
 class FakeSigner:
@@ -925,7 +925,7 @@ Tests:
 def test_build_returns_evidence_pack(sample_trace, fake_signer): ...
 def test_built_pack_has_one_signature(sample_trace, fake_signer): ...
 def test_built_pack_validates_against_evidence_pack_schema(sample_trace, fake_signer): ...
-    # Use jsonschema.validate against glasshouse-spec/spec/v0.1/evidence-pack.schema.json
+    # Use jsonschema.validate against auditk-spec/spec/v0.1/evidence-pack.schema.json
     # Skip if spec not present (same pattern as contract tests)
 def test_empty_traces_produces_zero_counts(fake_signer): ...
 ```
@@ -933,7 +933,7 @@ def test_empty_traces_produces_zero_counts(fake_signer): ...
 ### Acceptance
 
 - 4 tests pass
-- `from glasshouse_core.attestation.pack import build` works
+- `from auditk.attestation.pack import build` works
 - Built pack passes jsonschema validation against spec
 
 ### Commit message file `/tmp/t46-msg.txt`
@@ -954,7 +954,7 @@ Co-Authored-By: Oz <oz-agent@warp.dev>
 
 ### What to do
 
-Replace the stub implementations in `src/glasshouse_core/cli.py` for the three
+Replace the stub implementations in `src/auditk/cli.py` for the three
 commands: `probe`, `attest`, `verify`. Leave `replay` and `diff` as stubs.
 
 ### What the commands must do
@@ -1057,17 +1057,17 @@ Co-Authored-By: Oz <oz-agent@warp.dev>
 
 ### What to do
 
-1. Create a new private GitHub repo: `github.com/haikomatt/glasshouse-probes-jailbreak`
-2. Scaffold it locally at `~/Projects/glasshouse-probes-jailbreak/`
+1. Create a new private GitHub repo: `github.com/haikomatt/auditk-probes-jailbreak`
+2. Scaffold it locally at `~/Projects/auditk-probes-jailbreak/`
 3. Write 5 probe YAML files
 
 ### Repo structure
 
 ```
-glasshouse-probes-jailbreak/
+auditk-probes-jailbreak/
 ├── LICENSE                  # Apache-2.0 header, add "# SPDX-License-Identifier: Apache-2.0 AND CC-BY-SA-4.0"
 ├── README.md
-├── pyproject.toml           # minimal, name glasshouse-probes-jailbreak, no deps beyond glasshouse-core
+├── pyproject.toml           # minimal, name auditk-probes-jailbreak, no deps beyond auditk
 └── probes/
     ├── jb-001-direct-override.yaml
     ├── jb-002-dan-roleplay.yaml
@@ -1080,15 +1080,15 @@ glasshouse-probes-jailbreak/
 
 ```toml
 [project]
-name = "glasshouse-probes-jailbreak"
+name = "auditk-probes-jailbreak"
 version = "0.1.0"
 description = "Jailbreak probe family for glasshouse."
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
-dependencies = ["glasshouse-core>=0.0.1"]
+dependencies = ["auditk>=0.0.1"]
 
 [project.urls]
-Homepage = "https://github.com/haikomatt/glasshouse-probes-jailbreak"
+Homepage = "https://github.com/haikomatt/auditk-probes-jailbreak"
 
 [build-system]
 requires = ["hatchling>=1.20"]
@@ -1097,7 +1097,7 @@ build-backend = "hatchling.build"
 
 ### The 5 probe YAML files
 
-Each file must validate against `glasshouse-spec/spec/v0.1/probe.schema.json`.
+Each file must validate against `auditk-spec/spec/v0.1/probe.schema.json`.
 Use this structure:
 
 ```yaml
@@ -1135,9 +1135,9 @@ Probes to write:
 ### README for the probe repo
 
 ```markdown
-# glasshouse-probes-jailbreak
+# auditk-probes-jailbreak
 
-Jailbreak probe family for [glasshouse](https://github.com/haikomatt/glasshouse-core).
+Jailbreak probe family for [glasshouse](https://github.com/haikomatt/auditk).
 
 5 curated probes targeting: direct override, DAN role-play, hypothetical framing,
 authority impersonation, and system-prompt extraction.
@@ -1145,7 +1145,7 @@ authority impersonation, and system-prompt extraction.
 ## Usage
 
 \```bash
-pip install glasshouse-probes-jailbreak
+pip install auditk-probes-jailbreak
 glasshouse probe --endpoint https://your-agent/ --suite $(python -c "import glasshouse_probes_jailbreak; print(glasshouse_probes_jailbreak.__path__[0])")/probes/
 \```
 
@@ -1157,11 +1157,11 @@ Apache-2.0 / CC-BY-SA-4.0 (probe definitions). See LICENSE.
 ### Init and push
 
 ```bash
-cd ~/Projects/glasshouse-probes-jailbreak
+cd ~/Projects/auditk-probes-jailbreak
 git init -b main
 git add .
 git commit -F /tmp/t48-msg.txt
-gh repo create haikomatt/glasshouse-probes-jailbreak --private --source=. --push \
+gh repo create haikomatt/auditk-probes-jailbreak --private --source=. --push \
   --description "Jailbreak probe family for glasshouse."
 ```
 
@@ -1171,17 +1171,17 @@ Commit message file `/tmp/t48-msg.txt`:
 
 Probes: direct override, DAN role-play, hypothetical framing,
 authority impersonation, system-prompt extraction.
-All 5 validate against glasshouse-spec/spec/v0.1/probe.schema.json.
+All 5 validate against auditk-spec/spec/v0.1/probe.schema.json.
 
 Co-Authored-By: Oz <oz-agent@warp.dev>
 ```
 
 ### Acceptance
 
-- `pip install -e ~/Projects/glasshouse-probes-jailbreak` in the glasshouse-core venv succeeds
-- `from glasshouse_core.probes.loader import load_probes; probes = load_probes(Path("~/Projects/glasshouse-probes-jailbreak/probes")); assert len(probes) == 5`
+- `pip install -e ~/Projects/auditk-probes-jailbreak` in the auditk venv succeeds
+- `from auditk.probes.loader import load_probes; probes = load_probes(Path("~/Projects/auditk-probes-jailbreak/probes")); assert len(probes) == 5`
 - All 5 YAML files validate against the spec schema
-- Repo exists at github.com/haikomatt/glasshouse-probes-jailbreak (private)
+- Repo exists at github.com/haikomatt/auditk-probes-jailbreak (private)
 
 ---
 
@@ -1197,7 +1197,7 @@ This is done by Matt after T4.1–T4.8 are merged. Instructions:
 2. Run the three commands:
 
 ```bash
-cd ~/Projects/glasshouse-core
+cd ~/Projects/auditk
 source .venv/bin/activate
 
 # Generate a signing key
@@ -1206,7 +1206,7 @@ glasshouse key-gen signing_key
 # Run probes (against a mock endpoint or the real Oz endpoint if available)
 glasshouse probe \
   --endpoint https://api.warp.dev/v1/agent  \  # or a mock
-  --suite ~/Projects/glasshouse-probes-jailbreak/probes/ \
+  --suite ~/Projects/auditk-probes-jailbreak/probes/ \
   --out demos/oz-session-001/probe-report.json
 
 # Attest
@@ -1239,7 +1239,7 @@ glasshouse verify demos/oz-session-001/evidence-pack.json \
 After all tasks T4.1–T4.8 are done and passing:
 
 ```bash
-cd ~/Projects/glasshouse-core
+cd ~/Projects/auditk
 git checkout main
 git merge --no-ff origin/phase-4-poc-sprint -F /tmp/merge-p4-msg.txt
 git push origin main
@@ -1259,7 +1259,7 @@ Phase 4 POC sprint complete (T4.1–T4.8):
 - attestation/signer.py: Ed25519 generate/sign/verify
 - attestation/pack.py: build() with drift + signing
 - cli.py: probe, attest, verify wired; replay/diff remain stubs
-- New repo: glasshouse-probes-jailbreak (5 probes)
+- New repo: auditk-probes-jailbreak (5 probes)
 
 All tests pass. T4.9 (Oz demo) is a manual step.
 
@@ -1286,7 +1286,7 @@ Format: `BLOCKED T4.X: <one line reason> — tried: <what you tried>`
 
 After each task:
 ```bash
-cd ~/Projects/glasshouse-core
+cd ~/Projects/auditk
 source .venv/bin/activate
 pytest -q
 ```

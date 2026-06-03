@@ -1,6 +1,6 @@
-"""Tests for glasshouse_core.attestation.canonical."""
+"""Tests for auditk.attestation.canonical."""
 
-from glasshouse_core.attestation.canonical import canonicalize
+from auditk.attestation.canonical import canonicalize
 
 
 def test_dict_key_order_is_normalised() -> None:

@@ -34,4 +34,4 @@ jobs:
       - name: Test (pytest)
         run: pytest -q
         env:
-          GLASSHOUSE_SPEC_PATH: ../glasshouse-spec
+          GLASSHOUSE_SPEC_PATH: ../auditk-spec

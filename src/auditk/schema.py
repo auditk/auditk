@@ -15,7 +15,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
-    from glasshouse_core.adapters.protocols import Stimulus
+    from auditk.adapters.protocols import Stimulus
 
 
 class Actor(str, Enum):

@@ -5,10 +5,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from glasshouse_core.adapters.protocols import Signer
-from glasshouse_core.analysis.drift import compute_drift
-from glasshouse_core.attestation.canonical import canonicalize
-from glasshouse_core.schema import (
+from auditk.adapters.protocols import Signer
+from auditk.analysis.drift import compute_drift
+from auditk.attestation.canonical import canonicalize
+from auditk.schema import (
     EvidencePack,
     Issuer,
     ProbeResult,

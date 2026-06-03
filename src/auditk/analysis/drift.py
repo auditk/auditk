@@ -11,7 +11,7 @@ drift_score = 1 - mean(s_i).
 import re
 from statistics import mean
 
-from glasshouse_core.schema import DriftReport, Trace
+from auditk.schema import DriftReport, Trace
 
 _METHOD = "plan-action-similarity"
 _METHOD_VERSION = "0.1"

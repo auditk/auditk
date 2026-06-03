@@ -12,7 +12,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from glasshouse_core.schema import (
+from auditk.schema import (
     AgentConfig,
     EvidencePack,
     Signature,

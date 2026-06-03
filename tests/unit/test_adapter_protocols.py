@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from glasshouse_core.adapters import (
+from auditk.adapters import (
     AgentConfigLoader,
     EndpointProber,
     EvidenceStore,
@@ -18,7 +18,7 @@ from glasshouse_core.adapters import (
     Stimulus,
     TraceAdapter,
 )
-from glasshouse_core.schema import (
+from auditk.schema import (
     Action,
     ActionType,
     Actor,

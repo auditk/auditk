@@ -9,8 +9,8 @@ from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
-from glasshouse_core.adapters.protocols import Stimulus  # noqa: F401
-from glasshouse_core.schema import ProbeDefinition
+from auditk.adapters.protocols import Stimulus  # noqa: F401
+from auditk.schema import ProbeDefinition
 
 logger = logging.getLogger(__name__)
 

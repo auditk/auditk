@@ -19,8 +19,8 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from glasshouse_core.adapters.langgraph import LangGraphTraceAdapter, ingest_checkpoints
-from glasshouse_core.schema import ActionType, Trace
+from auditk.adapters.langgraph import LangGraphTraceAdapter, ingest_checkpoints
+from auditk.schema import ActionType, Trace
 
 _FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "langgraph"
 _SPEC_PATH = Path(os.environ.get("GLASSHOUSE_SPEC_PATH", "../glasshouse-spec"))

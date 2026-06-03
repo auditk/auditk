@@ -2,8 +2,8 @@
 
 from datetime import datetime, timezone
 
-from glasshouse_core.analysis.drift import compute_drift
-from glasshouse_core.schema import (
+from auditk.analysis.drift import compute_drift
+from auditk.schema import (
     Action,
     ActionType,
     Actor,

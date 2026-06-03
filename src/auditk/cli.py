@@ -11,7 +11,7 @@ from pathlib import Path
 
 import typer
 
-from glasshouse_core import __spec_version__, __version__
+from auditk import __spec_version__, __version__
 
 app = typer.Typer(
     help="glasshouse — the open standard for agent alignment evidence.",
@@ -31,7 +31,7 @@ def key_gen(
     path: str = typer.Argument(..., help="Base path for key files (no extension)."),
 ) -> None:
     """Generate an Ed25519 keypair and write .ed25519 and .ed25519.pub files."""
-    from glasshouse_core.attestation.signer import generate_keypair
+    from auditk.attestation.signer import generate_keypair
 
     priv_path, pub_path = generate_keypair(Path(path))
     typer.echo(f"Private key: {priv_path}")
@@ -46,9 +46,9 @@ def ingest(
     strip_payloads: bool = typer.Option(False, help="Redact tool inputs and results."),
 ) -> None:
     """Ingest a raw session file and write a normalised Trace JSON."""
-    from glasshouse_core.adapters import get_adapter
-    from glasshouse_core.adapters.claude_code import ClaudeCodeTraceAdapter
-    from glasshouse_core.adapters.protocols import TraceAdapter
+    from auditk.adapters import get_adapter
+    from auditk.adapters.claude_code import ClaudeCodeTraceAdapter
+    from auditk.adapters.protocols import TraceAdapter
 
     in_path = Path(in_file)
     if in_path.suffix == ".jsonl":
@@ -82,9 +82,9 @@ def attest(
     ),
 ) -> None:
     """Build and sign an evidence pack from traces + optional probe results."""
-    from glasshouse_core.attestation.pack import build
-    from glasshouse_core.attestation.signer import LocalEd25519Signer, generate_keypair
-    from glasshouse_core.schema import Issuer, ProbeResult, RiskTier, Subject, Trace
+    from auditk.attestation.pack import build
+    from auditk.attestation.signer import LocalEd25519Signer, generate_keypair
+    from auditk.schema import Issuer, ProbeResult, RiskTier, Subject, Trace
 
     traces_path = Path(traces)
     if traces_path.suffix == ".jsonl":
@@ -156,9 +156,9 @@ def verify(
     public_key: str = typer.Option(..., help="Path to the trusted public key (.ed25519.pub)."),
 ) -> None:
     """Verify all signatures on an evidence pack against a trusted public key."""
-    from glasshouse_core.attestation.canonical import canonicalize
-    from glasshouse_core.attestation.signer import LocalEd25519Verifier
-    from glasshouse_core.schema import EvidencePack
+    from auditk.attestation.canonical import canonicalize
+    from auditk.attestation.signer import LocalEd25519Verifier
+    from auditk.schema import EvidencePack
 
     pack_obj = EvidencePack.model_validate(json.loads(Path(pack).read_text()))
     if not pack_obj.signatures:

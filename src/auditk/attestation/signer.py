@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PublicKey,
 )
 
-from glasshouse_core.schema import Signature
+from auditk.schema import Signature
 
 
 def generate_keypair(path: Path) -> tuple[Path, Path]:

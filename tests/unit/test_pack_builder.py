@@ -1,4 +1,4 @@
-"""Tests for glasshouse_core.attestation.pack."""
+"""Tests for auditk.attestation.pack."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from glasshouse_core.attestation.pack import build
-from glasshouse_core.schema import (
+from auditk.attestation.pack import build
+from auditk.schema import (
     Action,
     ActionType,
     Actor,

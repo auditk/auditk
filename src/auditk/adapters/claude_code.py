@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from glasshouse_core.schema import (
+from auditk.schema import (
     Action,
     ActionType,
     Actor,

@@ -14,7 +14,7 @@ from uuid import uuid4
 import jsonschema
 import pytest
 
-from glasshouse_core.schema import (
+from auditk.schema import (
     Action,
     ActionType,
     Actor,

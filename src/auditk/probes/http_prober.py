@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from glasshouse_core.adapters.protocols import ProbeResponse, Stimulus
+from auditk.adapters.protocols import ProbeResponse, Stimulus
 
 if TYPE_CHECKING:
     pass

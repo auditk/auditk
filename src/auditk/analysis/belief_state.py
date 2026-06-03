@@ -8,7 +8,7 @@ already present in the trace (no I/O, no randomness).
 
 from __future__ import annotations
 
-from glasshouse_core.schema import BeliefState, ContextRef, Step, Trace
+from auditk.schema import BeliefState, ContextRef, Step, Trace
 
 
 def _first_declared_intent(steps: list[Step]) -> str | None:

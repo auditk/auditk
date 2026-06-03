@@ -70,6 +70,6 @@ Verified run (synthetic `session-intent-action.jsonl`, payloads stripped):
    and stay fixed.
 4. **Phase 4b** (after the demo lands): finish the probe path
    (loader/http_prober/scoring/runner already built → add `run_suite`, the
-   `glasshouse-probes-jailbreak` family, and the `probe` CLI command) against the
+   `auditk-probes-jailbreak` family, and the `probe` CLI command) against the
    testbed's deliberately-vulnerable agent.
 5. **More adapters** (Phase C): OpenClaw, Hermes — each a demo + essay.

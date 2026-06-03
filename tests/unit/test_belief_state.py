@@ -1,6 +1,6 @@
 # Copyright 2026 Matt Haiko and the glasshouse Project Contributors
 # SPDX-License-Identifier: Apache-2.0
-"""Unit tests for glasshouse_core.analysis.belief_state.extract_belief_state."""
+"""Unit tests for auditk.analysis.belief_state.extract_belief_state."""
 
 from __future__ import annotations
 
@@ -10,10 +10,10 @@ from pathlib import Path
 
 import pytest
 
-from glasshouse_core.adapters.langgraph import ingest_checkpoints
-from glasshouse_core.adapters.generic_otel import ingest_otel_spans
-from glasshouse_core.analysis import extract_belief_state
-from glasshouse_core.schema import (
+from auditk.adapters.langgraph import ingest_checkpoints
+from auditk.adapters.generic_otel import ingest_otel_spans
+from auditk.analysis import extract_belief_state
+from auditk.schema import (
     Action,
     ActionType,
     Actor,
