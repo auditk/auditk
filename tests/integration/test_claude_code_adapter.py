@@ -1,7 +1,7 @@
 """Integration tests for the Claude Code session adapter.
 
-Fixtures are synthetic (no real session data). When glasshouse-spec is present
-(GLASSHOUSE_SPEC_PATH, default ../glasshouse-spec) the produced Trace is also
+Fixtures are synthetic (no real session data). When auditk-spec is present
+(GLASSHOUSE_SPEC_PATH, default ../auditk-spec) the produced Trace is also
 validated against the normative trace.schema.json.
 """
 
@@ -19,7 +19,7 @@ from auditk.adapters.claude_code import (
 from auditk.schema import ActionType, Actor
 
 _FIXTURES = Path(__file__).parent.parent / "fixtures" / "claude_code"
-_SPEC_PATH = Path(os.environ.get("GLASSHOUSE_SPEC_PATH", "../glasshouse-spec"))
+_SPEC_PATH = Path(os.environ.get("GLASSHOUSE_SPEC_PATH", "../auditk-spec"))
 _SCHEMA_FILE = _SPEC_PATH / "spec" / "v0.1" / "trace.schema.json"
 
 
@@ -29,7 +29,7 @@ def _load(name: str) -> list[dict]:
 
 def _validate_against_spec(trace) -> None:
     if not _SCHEMA_FILE.exists():
-        pytest.skip(f"glasshouse-spec not found at {_SPEC_PATH}")
+        pytest.skip(f"auditk-spec not found at {_SPEC_PATH}")
     schema = json.loads(_SCHEMA_FILE.read_text())
     jsonschema.validate(instance=trace.model_dump(mode="json"), schema=schema)
 

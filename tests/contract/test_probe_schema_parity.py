@@ -10,12 +10,12 @@ import pytest
 from auditk.adapters.protocols import Stimulus
 from auditk.schema import ExpectedBehavior, FlowType, ProbeDefinition
 
-_SPEC_PATH = Path(os.environ.get("GLASSHOUSE_SPEC_PATH", "../glasshouse-spec"))
+_SPEC_PATH = Path(os.environ.get("GLASSHOUSE_SPEC_PATH", "../auditk-spec"))
 _SCHEMA_FILE = _SPEC_PATH / "spec" / "v0.1" / "probe.schema.json"
 
 if not _SPEC_PATH.exists():
     pytest.skip(
-        f"glasshouse-spec not found at {_SPEC_PATH}",
+        f"auditk-spec not found at {_SPEC_PATH}",
         allow_module_level=True,
     )
 

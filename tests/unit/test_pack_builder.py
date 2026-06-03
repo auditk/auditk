@@ -24,7 +24,7 @@ from auditk.schema import (
     Trace,
 )
 
-_SPEC_PATH = Path(os.environ.get("GLASSHOUSE_SPEC_PATH", "../glasshouse-spec"))
+_SPEC_PATH = Path(os.environ.get("GLASSHOUSE_SPEC_PATH", "../auditk-spec"))
 _PACK_SCHEMA = _SPEC_PATH / "spec" / "v0.1" / "evidence-pack.schema.json"
 
 _TS = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -92,7 +92,7 @@ def test_built_pack_has_one_signature(sample_trace: Trace, fake_signer: FakeSign
 
 @pytest.mark.skipif(
     not _PACK_SCHEMA.exists(),
-    reason=f"glasshouse-spec not found at {_SPEC_PATH}",
+    reason=f"auditk-spec not found at {_SPEC_PATH}",
 )
 def test_built_pack_validates_against_evidence_pack_schema(
     sample_trace: Trace, fake_signer: FakeSigner

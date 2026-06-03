@@ -1,6 +1,6 @@
-"""glasshouse-core — Python reference implementation of glasshouse-spec.
+"""auditk — the open standard for agent alignment evidence.
 
-The open, vendor-neutral standard for agent alignment evidence.
+Python reference implementation of auditk-spec.
 """
 
 __version__ = "0.0.1"

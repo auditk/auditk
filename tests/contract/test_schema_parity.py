@@ -1,6 +1,6 @@
-"""Contract tests: Pydantic models must validate against the normative JSON Schemas in glasshouse-spec.
+"""Contract tests: Pydantic models must validate against the normative JSON Schemas in auditk-spec.
 
-Configured via env var GLASSHOUSE_SPEC_PATH (default: ../glasshouse-spec).
+Configured via env var GLASSHOUSE_SPEC_PATH (default: ../auditk-spec).
 Entire module is skipped when the spec directory does not exist — useful when
 only glasshouse-core is checked out and the spec repo is absent.
 """
@@ -28,13 +28,13 @@ from auditk.schema import (
     TraceSummary,
 )
 
-_SPEC_PATH = Path(os.environ.get("GLASSHOUSE_SPEC_PATH", "../glasshouse-spec"))
+_SPEC_PATH = Path(os.environ.get("GLASSHOUSE_SPEC_PATH", "../auditk-spec"))
 _SCHEMA_DIR = _SPEC_PATH / "spec" / "v0.1"
 
 # Skip the entire module if the spec directory is not present.
 if not _SPEC_PATH.exists():
     pytest.skip(
-        f"glasshouse-spec not found at {_SPEC_PATH}; "
+        f"auditk-spec not found at {_SPEC_PATH}; "
         "set GLASSHOUSE_SPEC_PATH to run contract tests.",
         allow_module_level=True,
     )
