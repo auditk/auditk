@@ -4,7 +4,7 @@
     "checkpoint": {
       "id": "ck-s0",
       "channel_values": {
-        "messages": [{"type": "human", "content": "Tell me about Glasshouse smart lights."}],
+        "messages": [{"type": "human", "content": "Tell me about Lumina smart lights."}],
         "__current_tasks": [],
         "intent": null
       },
@@ -25,8 +25,8 @@
       "id": "ck-s1",
       "channel_values": {
         "messages": [
-          {"type": "human", "content": "Tell me about Glasshouse smart lights."},
-          {"type": "ai", "content": "Glasshouse smart lights let you control brightness and colour via voice or app."}
+          {"type": "human", "content": "Tell me about Lumina smart lights."},
+          {"type": "ai", "content": "Lumina smart lights let you control brightness and colour via voice or app."}
         ],
         "__current_tasks": [],
         "intent": null
@@ -41,7 +41,7 @@
       "writes": {
         "respond": {
           "messages": [
-            {"type": "ai", "content": "Glasshouse smart lights let you control brightness and colour via voice or app."}
+            {"type": "ai", "content": "Lumina smart lights let you control brightness and colour via voice or app."}
           ]
         }
       }

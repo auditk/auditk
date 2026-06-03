@@ -3,7 +3,7 @@ name = "auditk"
 version = "0.0.1"
 description = "Python reference implementation of auditk-spec — the open standard for agent alignment evidence."
 authors = [
-    { name = "Matt Haiko" },
+    { name = "Matt Dawson" },
     { name = "The auditk Project Contributors" },
 ]
 license = { text = "Apache-2.0" }

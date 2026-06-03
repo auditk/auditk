@@ -1,4 +1,4 @@
-"""Build and sign glasshouse evidence packs."""
+"""Build and sign auditk evidence packs."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Pluggable adapter protocols for glasshouse-core.
+"""Pluggable adapter protocols for auditk.
 
 Each Protocol defines a boundary that can be satisfied by any concrete class
 (structural subtyping / PEP 544). Stimulus and ProbeResponse are value objects

@@ -1,6 +1,6 @@
-# Copyright 2026 Matt Haiko and the glasshouse Project Contributors
+# Copyright 2026 Matt Dawson and the AuditK Project Contributors
 # SPDX-License-Identifier: Apache-2.0
-"""Claude Code session adapter for glasshouse-core.
+"""Claude Code session adapter for auditk.
 
 Converts a Claude Code session — a list of JSONL event dicts as persisted under
 ``~/.claude/projects/<encoded-path>/<session-uuid>.jsonl`` — into a normalised

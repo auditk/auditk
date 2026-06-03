@@ -79,7 +79,7 @@ def test_minimal_evidence_pack_validates() -> None:
     pack = EvidencePack(
         pack_id=uuid4(),
         issued_at=now,
-        issuer=Issuer(name="glasshouse-core smoke test"),
+        issuer=Issuer(name="auditk smoke test"),
         subject=Subject(agent_config_ref="cfg-abc", agent_version="0.1"),
         trace_summary=TraceSummary(
             trace_count=0,

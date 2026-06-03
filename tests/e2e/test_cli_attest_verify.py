@@ -1,4 +1,4 @@
-"""E2E tests for the glasshouse CLI attest/verify pipeline."""
+"""E2E tests for the auditk CLI attest/verify pipeline."""
 
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
-"""Pydantic models corresponding to glasshouse-spec v0.1.
+"""Pydantic models corresponding to auditk-spec v0.1.
 
-JSON Schema files in glasshouse-spec are the normative source of truth; this
+JSON Schema files in auditk-spec are the normative source of truth; this
 module mirrors them for ergonomic Python use. When the spec changes, this
 module changes in lockstep and a new minor version is released.
 """

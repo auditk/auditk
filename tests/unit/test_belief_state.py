@@ -1,4 +1,4 @@
-# Copyright 2026 Matt Haiko and the auditk Project Contributors
+# Copyright 2026 Matt Dawson and the AuditK Project Contributors
 # SPDX-License-Identifier: Apache-2.0
 """Unit tests for auditk.analysis.belief_state.extract_belief_state."""
 

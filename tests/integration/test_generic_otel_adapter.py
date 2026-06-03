@@ -21,7 +21,7 @@ from auditk.adapters.generic_otel import OtelTraceAdapter, ingest_otel_spans
 from auditk.schema import Trace
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "otel"
-_SPEC_PATH = Path(os.environ.get("GLASSHOUSE_SPEC_PATH", "../auditk-spec"))
+_SPEC_PATH = Path(os.environ.get("AUDITK_SPEC_PATH", "../auditk-spec"))
 _TRACE_SCHEMA_PATH = _SPEC_PATH / "spec" / "v0.1" / "trace.schema.json"
 
 

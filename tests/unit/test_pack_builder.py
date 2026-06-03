@@ -24,7 +24,7 @@ from auditk.schema import (
     Trace,
 )
 
-_SPEC_PATH = Path(os.environ.get("GLASSHOUSE_SPEC_PATH", "../auditk-spec"))
+_SPEC_PATH = Path(os.environ.get("AUDITK_SPEC_PATH", "../auditk-spec"))
 _PACK_SCHEMA = _SPEC_PATH / "spec" / "v0.1" / "evidence-pack.schema.json"
 
 _TS = datetime(2026, 1, 1, tzinfo=timezone.utc)

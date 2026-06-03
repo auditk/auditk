@@ -1,6 +1,6 @@
-# Copyright 2026 Matt Haiko and the auditk Project Contributors
+# Copyright 2026 Matt Dawson and the AuditK Project Contributors
 # SPDX-License-Identifier: Apache-2.0
-"""LangGraph checkpoint adapter for glasshouse-core.
+"""LangGraph checkpoint adapter for auditk.
 
 Converts a list of serialised LangGraph checkpoint dicts into a normalised Trace.
 Checkpoint dicts must follow the serialised CheckpointTuple shape (not live objects).

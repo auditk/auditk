@@ -1,4 +1,4 @@
-"""Generic OpenTelemetry / OpenInference adapter for glasshouse-core.
+"""Generic OpenTelemetry / OpenInference adapter for auditk.
 
 Converts a list of OTel span dicts (OpenInference GenAI semconv) into a Trace.
 No OTel SDK dependency is required — spans are processed as plain dicts.

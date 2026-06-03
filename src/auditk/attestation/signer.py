@@ -1,4 +1,4 @@
-"""Ed25519 signing and verification for glasshouse evidence packs."""
+"""Ed25519 signing and verification for auditk evidence packs."""
 
 from __future__ import annotations
 

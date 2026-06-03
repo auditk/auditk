@@ -1,4 +1,4 @@
-# Copyright 2026 Matt Haiko and the glasshouse Project Contributors
+# Copyright 2026 Matt Dawson and the AuditK Project Contributors
 # SPDX-License-Identifier: Apache-2.0
 """Belief-state extractor — v0.1 heuristic method.
 

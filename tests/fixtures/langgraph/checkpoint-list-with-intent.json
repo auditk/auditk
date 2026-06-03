@@ -50,7 +50,7 @@
       "channel_values": {
         "messages": [
           {"type": "human", "content": "What smart light products do you offer?"},
-          {"type": "ai", "content": "We offer the Glasshouse Glow series: ambient, task, and accent lighting options."}
+          {"type": "ai", "content": "We offer the Lumina Glow series: ambient, task, and accent lighting options."}
         ],
         "__current_tasks": [],
         "intent": "in_scope"
@@ -65,7 +65,7 @@
       "writes": {
         "respond": {
           "messages": [
-            {"type": "ai", "content": "We offer the Glasshouse Glow series: ambient, task, and accent lighting options."}
+            {"type": "ai", "content": "We offer the Lumina Glow series: ambient, task, and accent lighting options."}
           ]
         }
       }

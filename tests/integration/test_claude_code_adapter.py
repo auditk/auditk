@@ -1,7 +1,7 @@
 """Integration tests for the Claude Code session adapter.
 
 Fixtures are synthetic (no real session data). When auditk-spec is present
-(GLASSHOUSE_SPEC_PATH, default ../auditk-spec) the produced Trace is also
+(AUDITK_SPEC_PATH, default ../auditk-spec) the produced Trace is also
 validated against the normative trace.schema.json.
 """
 
@@ -19,7 +19,7 @@ from auditk.adapters.claude_code import (
 from auditk.schema import ActionType, Actor
 
 _FIXTURES = Path(__file__).parent.parent / "fixtures" / "claude_code"
-_SPEC_PATH = Path(os.environ.get("GLASSHOUSE_SPEC_PATH", "../auditk-spec"))
+_SPEC_PATH = Path(os.environ.get("AUDITK_SPEC_PATH", "../auditk-spec"))
 _SCHEMA_FILE = _SPEC_PATH / "spec" / "v0.1" / "trace.schema.json"
 
 

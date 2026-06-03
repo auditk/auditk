@@ -8,7 +8,7 @@ Unit tests cover individual functions and Pydantic model validations in complete
 
 ## 2. Contract
 
-Contract tests verify that the Pydantic models in `src/auditk/schema.py` are in exact alignment with the JSON Schema files published in `auditk-spec/spec/v0.1/`. For each (model, schema) pair a minimal valid instance is constructed in Python, serialised via `.model_dump(mode="json")`, then validated with `jsonschema.validate`. A mismatch here means the Python implementation has drifted from the normative spec. Tests live in `tests/contract/`. Run with: `pytest tests/contract/`. The env var `GLASSHOUSE_SPEC_PATH` overrides the default spec location (`../auditk-spec`); if the path does not exist the entire module is skipped with a clear message rather than failing — useful in CI environments that check out only this repo.
+Contract tests verify that the Pydantic models in `src/auditk/schema.py` are in exact alignment with the JSON Schema files published in `auditk-spec/spec/v0.1/`. For each (model, schema) pair a minimal valid instance is constructed in Python, serialised via `.model_dump(mode="json")`, then validated with `jsonschema.validate`. A mismatch here means the Python implementation has drifted from the normative spec. Tests live in `tests/contract/`. Run with: `pytest tests/contract/`. The env var `AUDITK_SPEC_PATH` overrides the default spec location (`../auditk-spec`); if the path does not exist the entire module is skipped with a clear message rather than failing — useful in CI environments that check out only this repo.
 
 ## 3. Integration
 
@@ -16,7 +16,7 @@ Integration tests exercise the adapters (`src/auditk/adapters/`) end-to-end agai
 
 ## 4. End-to-End (e2e)
 
-End-to-end tests wire the full pipeline — adapter → analysis → probe runner → evidence pack builder — against the reference agents in `auditk-testbed`. These tests require the testbed to be available (either locally or in CI as a sibling checkout) and may be slow. They are gated by the `GLASSHOUSE_TESTBED_PATH` env var; if the path is absent the tests skip. Tests live in `tests/e2e/`. Run with: `pytest tests/e2e/`.
+End-to-end tests wire the full pipeline — adapter → analysis → probe runner → evidence pack builder — against the reference agents in `auditk-testbed`. These tests require the testbed to be available (either locally or in CI as a sibling checkout) and may be slow. They are gated by the `AUDITK_TESTBED_PATH` env var; if the path is absent the tests skip. Tests live in `tests/e2e/`. Run with: `pytest tests/e2e/`.
 
 ## 5. Probe Quality
 
@@ -28,4 +28,4 @@ Drift-validation tests reproduce the correlation study in `auditk-spec/docs/drif
 
 ## 7. Multi-Tenant Operational
 
-Multi-tenant operational tests verify that tenant isolation holds at the `glasshouse-platform` layer: cross-tenant queries return empty results, per-tenant signing keys are scoped correctly, and the fair-queue worker pool shows no starvation under synthetic load. These tests require a running Postgres instance (configured via `GLASSHOUSE_TEST_DATABASE_URL`) and are not run in the standard `pytest` invocation. Tests live in `tests/operational/` (created when Phase 10 lands). Run with: `pytest tests/operational/ --run-operational`.
+Multi-tenant operational tests verify that tenant isolation holds at the `auditk-platform` layer: cross-tenant queries return empty results, per-tenant signing keys are scoped correctly, and the fair-queue worker pool shows no starvation under synthetic load. These tests require a running Postgres instance (configured via `AUDITK_TEST_DATABASE_URL`) and are not run in the standard `pytest` invocation. Tests live in `tests/operational/` (created when Phase 10 lands). Run with: `pytest tests/operational/ --run-operational`.

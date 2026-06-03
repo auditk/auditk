@@ -1,1 +1,1 @@
-"""glasshouse-core test suite."""
+"""auditk test suite."""

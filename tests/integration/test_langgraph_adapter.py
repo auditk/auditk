@@ -1,4 +1,4 @@
-# Copyright 2026 Matt Haiko and the auditk Project Contributors
+# Copyright 2026 Matt Dawson and the AuditK Project Contributors
 # SPDX-License-Identifier: Apache-2.0
 """Integration tests for the LangGraph checkpoint adapter.
 
@@ -23,7 +23,7 @@ from auditk.adapters.langgraph import LangGraphTraceAdapter, ingest_checkpoints
 from auditk.schema import ActionType, Trace
 
 _FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "langgraph"
-_SPEC_PATH = Path(os.environ.get("GLASSHOUSE_SPEC_PATH", "../auditk-spec"))
+_SPEC_PATH = Path(os.environ.get("AUDITK_SPEC_PATH", "../auditk-spec"))
 _TRACE_SCHEMA_FILE = _SPEC_PATH / "spec" / "v0.1" / "trace.schema.json"
 
 
@@ -36,7 +36,7 @@ def trace_schema() -> dict:  # type: ignore[type-arg]
     if not _TRACE_SCHEMA_FILE.exists():
         pytest.skip(
             f"auditk-spec not found at {_SPEC_PATH}; "
-            "set GLASSHOUSE_SPEC_PATH to run schema-validation tests."
+            "set AUDITK_SPEC_PATH to run schema-validation tests."
         )
     return json.loads(_TRACE_SCHEMA_FILE.read_text())  # type: ignore[return-value]
 
