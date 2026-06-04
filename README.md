@@ -24,7 +24,7 @@ What is working today:
 What comes next:
 - Probe path (Phase 4b): `run_suite`, jailbreak probe family against the testbed
 - More adapters (Phase C): OpenClaw, Hermes
-- Public launch
+- More testing against agent traces
 
 ## The pipeline
 
