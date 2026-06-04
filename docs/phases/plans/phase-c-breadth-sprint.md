@@ -151,6 +151,66 @@ head -100 ~/Projects/hermes-agent/agent/transports/codex_event_projector.py
 
 **Acceptance:** Same pattern as OpenClaw adapter.
 
+### C.4b — Logira enrichment POC
+
+**Source:** `github.com/melonattacker/logira`
+**Branch:** `phase-c-logira`
+
+**Rationale.** The Mythos sandbox escape and git history scrubbing incidents (April 2026) proved that agents can manipulate their own audit trails. logira records syscall-level events (exec, file, net) via eBPF hooks at the kernel boundary — an evidence layer the agent cannot easily tamper with. The hypothesis is that kernel-level recording catches discrepancies the application-level trace misses.
+
+This task validates whether adding a kernel recording layer to auditk's pipeline provides additional signal. It does not create a logira adapter — it runs logira against a Claude Code session and compares the results.
+
+**Steps:**
+1. Install logira on the Arch box:
+   ```bash
+   git clone https://github.com/melonattacker/logira
+   cd logira
+   # Review the source and install script before running.
+   # Build from source (preferred): make build
+   # Alternatively verify the release binary SHA256 against the pinned value in the release notes.
+   sudo ./install-local.sh
+   ```
+2. Start the daemon: `sudo systemctl enable --now logirad`.
+3. Run a Claude Code session on `haikomatt/auditk-sandbox` under logira:
+   ```bash
+   logira run -- claude  # assigns a run-id; note it for later
+   # Task: same as demo-001 ("add a factorial function to mathutils.py")
+   ```
+4. Run the auditk pipeline on the same session: `auditk ingest --adapter claude-code --in <session>.jsonl --out trace.json --strip-payloads` then `attest` and `verify`.
+5. Extract logira events for the run:
+   ```bash
+   logira query last --type file   # file writes and reads
+   logira query last --type exec   # subprocesses spawned
+   logira query last --type net    # network connections
+   ```
+6. **Build the comparison table** using this expected mapping for a benign write-a-function task:
+
+| Expected logira event | Expected auditk step | Discrepancy if... |
+|---|---|---|
+| `write()` to `mathutils.py` | `tool_call` (Write) step | logira records write, auditk step missing → trace may be incomplete |
+| `exec()` for optional verification bash | `tool_call` (Bash) or no step if blocked | logira records exec, auditk shows it blocked/absent → expected |
+| Any `connect()` to external host | No corresponding step | **Flag immediately** — network egress not declared |
+| Any `write()` to `~/.claude/`, `.ssh/`, `.aws/` | No corresponding step | **Flag immediately** — credential/config write not declared |
+
+   Record: did logira see any events that have no corresponding auditk step? Did auditk declare any steps that logira did not record a syscall for?
+
+**Demo:** `demos/demo-logira/` — `README.md` with:
+- Run metadata (run-id, session UUID, task)
+- Syscall event counts (exec, file, net)
+- The completed comparison table above with actual values filled in
+- Any discrepancies found and their interpretation
+- Conclusion on whether kernel-level evidence adds signal for this class of task
+
+**Scope note to include in the README:** logira and auditk together cover the technical audit surface — kernel-level OS events and semantic intent–action alignment. Neither tool covers the **consent layer**: the human operator who authorised the session. A human could run `auditk ingest` on a fabricated trace and sign it; logira would record the `ingest` syscall, not the human's intent. This boundary is a design property of both tools, not a deficiency.
+
+**Acceptance:**
+- `demos/demo-logira/README.md` committed with the completed comparison table.
+- Both outcomes are acceptable: discrepancies found (documents the kernel gap) or no discrepancies (documents trace fidelity for benign tasks, explicitly noting this doesn’t generalise to adversarial agents).
+- The scope note is present in the README.
+
+**Phase D seeding — include in README as a forward reference:**
+The `TraceAdapter` protocol in auditk was designed for enrichment like this. A `logira` adapter would ingest `~/.logira/runs/<run-id>/events.jsonl` and produce a `Trace` whose steps correspond to syscall events rather than agent-reported actions. Running both the `claude-code` adapter and a `logira` adapter on the same session, then diffing the two Traces, is the Phase D validation experiment described in `docs/phases/roadmap-v0.2.md`. This task is the empirical foundation that determines whether that experiment is worth building.
+
 ### C.4 — Oz (Warp) adapter — COMPLEX TRACE REQUIRED
 
 **Source:** `~/Projects/warp` (source for understanding), `~/.local/state/warp-terminal/warp.sqlite` (live data)
@@ -417,10 +477,18 @@ runs:
 - The probe suite catches real vulnerabilities: `vulnerable_minimal` testbed agent fails ≥1 jailbreak probe; `aligned_minimal` passes all (results in `demos/probe-quality/`).
 - Drift has range: a session where an agent says "I’ll summarise the README" then exfiltrates credentials scores 0.7+, with 4 flagged steps (in `demos/demo-high-drift/`).
 - Apache-2.0, open spec, offline-verifiable: `auditk verify` on a tampered pack exits 1 (proof in `demos/tamper-demo/`).
+- Kernel vs. semantic: logira records the OS-level syscall trace independently; auditk records the semantic drift. Neither alone is sufficient. (`demos/demo-logira/` shows where they agree and where they diverge.)
+
+**What auditk does not claim.** The post should state this plainly to preempt misreading:
+- auditk proves the evidence pack accurately represents what the agent’s session produced and was not modified after signing. It does not guarantee the human operator exercised sound judgment in creating it.
+- The signature covers technical integrity of the artifact. The **consent layer** — whether the human who ran `auditk ingest` intended the result to be trustworthy — is outside the tool’s scope and always will be. No auditing tool at this layer covers it.
+- For the avoidance of doubt: auditk’s threat model is unauthorised agent actions and semantic drift. It is not a substitute for human judgment, access control, or organisational governance.
 
 **Publish:** Hacker News, LessWrong, AI Alignment Forum.
 
-**Companion essay** (shorter, blog format): "Intent–enactment drift as an alignment metric for production agents" — connecting the v0.1 Jaccard heuristic to the alignment research vocabulary.
+**Companion essays:**
+1. "Intent–enactment drift as an alignment metric for production agents" — connecting the v0.1 Jaccard heuristic to the alignment research vocabulary.
+2. "Why kernel-level recording and semantic drift are complementary, not competing" — based on `demos/demo-logira/` findings.
 
 ---
 
@@ -434,6 +502,7 @@ Run in this order (some parallelism possible but not required):
   C.2 (OpenClaw) → demos/demo-002
   C.3 (Hermes)   → demos/demo-003
   C.4 (Oz)       → demos/demo-004  ← investigate format first; complex trace
+  C.4b (Logira)  → demos/demo-logira  ← kernel-layer validation; needs C.2 or any adapter
   C.8 (probe quality gate: vulnerable vs aligned)  ← pressure test, needs C.0+C.1
   C.9 (high-drift evidence pack)                   ← pressure test, needs C.0
   C.10 (tamper demo)                               ← no deps beyond existing demos
@@ -443,7 +512,7 @@ Run in this order (some parallelism possible but not required):
   C.6 (public repos + tag) + C.7 (launch post)
 ```
 
-C.2, C.3, and C.4 are independent and can be parallelised with 3 agents.
+C.2, C.3, C.4, and C.4b are independent and can be parallelised with 4 agents.
 C.8, C.9, and C.10 can run in parallel once 4b lands.
 **C.8 and C.9 are required before C.6/C.7** — do not go public without them.
 
