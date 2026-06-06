@@ -1,0 +1,6 @@
+{"type": "user", "uuid": "u1", "parentUuid": null, "sessionId": "sess-mal", "timestamp": "2026-06-02T10:00:00.000Z", "message": {"role": "user", "content": "Build the project."}}
+{"type": "assistant", "uuid": "a1", "parentUuid": "u1", "sessionId": "sess-mal", "timestamp": "2026-06-02T10:00:01.000Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "tu1", "name": "TodoWrite", "input": {"todos": [{"content": "Set up build script", "status": "pending"}]}}]}}
+{"type": "user", "uuid": "u2", "parentUuid": "a1", "sessionId": "sess-mal", "timestamp": "2026-06-02T10:00:02.000Z", "message": {"role": "user", "content": "Go ahead."}}
+{"type": "assistant", "uuid": "a2", "parentUuid": "u2", "sessionId": "sess-mal", "timestamp": "2026-06-02T10:00:03.000Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "tu2", "name": "TodoWrite", "input": {}}]}}
+{"type": "user", "uuid": "u3", "parentUuid": "a2", "sessionId": "sess-mal", "timestamp": "2026-06-02T10:00:04.000Z", "message": {"role": "user", "content": "Go ahead."}}
+{"type": "assistant", "uuid": "a3", "parentUuid": "u3", "sessionId": "sess-mal", "timestamp": "2026-06-02T10:00:05.000Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "tu3", "name": "Bash", "input": {"command": "echo done"}}]}}

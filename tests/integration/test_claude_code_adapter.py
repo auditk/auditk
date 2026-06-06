@@ -24,7 +24,9 @@ _SCHEMA_FILE = _SPEC_PATH / "spec" / "v0.1" / "trace.schema.json"
 
 
 def _load(name: str) -> list[dict]:
-    return [json.loads(line) for line in (_FIXTURES / name).read_text().splitlines() if line.strip()]
+    return [
+        json.loads(line) for line in (_FIXTURES / name).read_text().splitlines() if line.strip()
+    ]
 
 
 def _validate_against_spec(trace) -> None:
@@ -77,7 +79,10 @@ def test_intent_action_session_expands_multiple_tool_uses() -> None:
 def test_strip_payloads_redacts_tool_input() -> None:
     trace = ingest_claude_code_session(_load("session-tool-use.jsonl"), strip_payloads=True)
     tool_call = trace.steps[1]
-    assert tool_call.action.payload["input"] == {"redacted": True, "size": pytest.approx(len(str({"command": "ls sandbox/"})), abs=0)}
+    assert tool_call.action.payload["input"] == {
+        "redacted": True,
+        "size": pytest.approx(len(str({"command": "ls sandbox/"})), abs=0),
+    }
 
 
 def test_intent_carried_across_separate_messages() -> None:
@@ -114,3 +119,122 @@ def test_adapter_class_matches_function() -> None:
 def test_empty_session_raises() -> None:
     with pytest.raises(ValueError):
         ingest_claude_code_session([{"type": "system", "subtype": "init"}])
+
+
+# --- Phase D1: standing plan from TodoWrite ---
+
+
+STANDING_PLAN_TEXT = "Set up build script\nRun tests"
+
+
+def test_todowrite_populates_standing_plan() -> None:
+    trace = ingest_claude_code_session(_load("session_todowrite_standing.jsonl"))
+    # user + TodoWrite + user + Bash + tool_result + Bash = 6 steps
+    assert len(trace.steps) == 6
+    bash_step = trace.steps[3]
+    assert bash_step.action.type == ActionType.TOOL_CALL
+    assert bash_step.declared_intent == STANDING_PLAN_TEXT
+    _validate_against_spec(trace)
+
+
+def test_standing_plan_attached_to_subsequent_action_intent() -> None:
+    trace = ingest_claude_code_session(_load("session_todowrite_standing.jsonl"))
+    bash_step = trace.steps[3]
+    assert bash_step.action.type == ActionType.TOOL_CALL
+    assert bash_step.declared_intent == STANDING_PLAN_TEXT
+
+
+def test_standing_plan_carries_across_events() -> None:
+    trace = ingest_claude_code_session(_load("session_todowrite_standing.jsonl"))
+    # event a3 (Bash) occurs two assistant events after a1 (TodoWrite)
+    later_bash = trace.steps[5]
+    assert later_bash.action.type == ActionType.TOOL_CALL
+    assert later_bash.declared_intent == STANDING_PLAN_TEXT
+
+
+def test_narration_precedence_over_standing_plan() -> None:
+    trace = ingest_claude_code_session(_load("session_todowrite_narration.jsonl"))
+    # user + assistant(TodoWrite + Bash) + user + Bash = 5 steps
+    assert len(trace.steps) == 5
+    first_tool = trace.steps[1]
+    assert first_tool.declared_intent == "I will set up the build and run tests."
+    # second tool_use in the same message gets the standing plan (new behaviour)
+    second_tool = trace.steps[2]
+    assert second_tool.declared_intent == STANDING_PLAN_TEXT
+    # next message after the narrated one also carries the standing plan
+    next_bash = trace.steps[4]
+    assert next_bash.declared_intent == STANDING_PLAN_TEXT
+
+
+def test_completed_todos_clear_standing_plan() -> None:
+    trace = ingest_claude_code_session(_load("session_todowrite_completed.jsonl"))
+    # user + text + TodoWrite(completed) + user + Bash = 5 steps
+    assert len(trace.steps) == 5
+    # The TodoWrite itself should have None because the standing plan is cleared
+    todo_step = trace.steps[2]
+    assert todo_step.action.type == ActionType.TOOL_CALL
+    assert todo_step.action.payload["name"] == "TodoWrite"
+    assert todo_step.declared_intent is None
+    # The subsequent Bash step should also have None
+    bash_step = trace.steps[4]
+    assert bash_step.action.type == ActionType.TOOL_CALL
+    assert bash_step.declared_intent is None
+
+
+def test_latest_todowrite_supersedes_previous() -> None:
+    trace = ingest_claude_code_session(_load("session_todowrite_supersede.jsonl"))
+    # user + TodoWrite(A,B) + user + TodoWrite(C) + user + Bash = 6 steps
+    assert len(trace.steps) == 6
+    bash_step = trace.steps[5]
+    assert bash_step.declared_intent == "Deploy to staging"
+
+
+def test_malformed_todowrite_ignored_keeps_previous() -> None:
+    trace = ingest_claude_code_session(_load("session_todowrite_malformed.jsonl"))
+    # user + TodoWrite(valid) + user + TodoWrite(malformed) + user + Bash = 6 steps
+    assert len(trace.steps) == 6
+    bash_step = trace.steps[5]
+    assert bash_step.declared_intent == "Set up build script"
+
+
+def test_todowrite_in_non_first_block_updates_plan() -> None:
+    trace = ingest_claude_code_session(_load("session_todowrite_nonfirst.jsonl"))
+    # user + assistant(Bash + TodoWrite) + user + Bash = 5 steps
+    assert len(trace.steps) == 5
+    # The TodoWrite is block i==1, so its own declared_intent follows precedence
+    # but it should still update the standing plan for subsequent steps
+    later_bash = trace.steps[4]
+    assert later_bash.action.type == ActionType.TOOL_CALL
+    assert later_bash.declared_intent == STANDING_PLAN_TEXT
+
+
+def test_strip_payloads_redacts_todowrite_payload_but_keeps_intent() -> None:
+    trace = ingest_claude_code_session(
+        _load("session_todowrite_standing.jsonl"), strip_payloads=True
+    )
+    todo_step = trace.steps[1]
+    assert todo_step.action.type == ActionType.TOOL_CALL
+    assert todo_step.action.payload["name"] == "TodoWrite"
+    assert todo_step.action.payload["input"] == {
+        "redacted": True,
+        "size": pytest.approx(115, abs=0),
+    }
+    # Downstream intent derived from standing plan is still present
+    bash_step = trace.steps[3]
+    assert bash_step.declared_intent == STANDING_PLAN_TEXT
+
+
+def test_user_and_tool_result_steps_have_no_intent() -> None:
+    trace = ingest_claude_code_session(_load("session_todowrite_standing.jsonl"))
+    user_steps = [s for s in trace.steps if s.actor == Actor.USER]
+    tool_steps = [s for s in trace.steps if s.actor == Actor.TOOL]
+    for step in user_steps + tool_steps:
+        assert step.declared_intent is None
+
+
+def test_coverage_exceeds_threshold_on_fixture_session() -> None:
+    trace = ingest_claude_code_session(_load("session_with_todos.jsonl"))
+    covered = sum(1 for s in trace.steps if s.declared_intent)
+    total = len(trace.steps)
+    assert total >= 12, f"expected >=12 steps, got {total}"
+    assert covered / total > 0.50, f"coverage {covered}/{total} = {covered / total:.2%}"

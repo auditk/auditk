@@ -14,6 +14,7 @@ from real sessions that may contain sensitive code.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -25,6 +26,13 @@ from auditk.schema import (
     Step,
     Trace,
 )
+
+
+@dataclass
+class PlanState:
+    pending_intent: str | None = None
+    standing_plan: str | None = None
+
 
 _SUBSTANTIVE_TYPES = ("user", "assistant")
 _REDACTION_KEY = "redacted"
@@ -45,11 +53,9 @@ def ingest_claude_code_session(
 
     session_id = str(substantive[0].get("sessionId") or "unknown")
     steps: list[Step] = []
-    pending_intent: str | None = None
+    plan = PlanState()
     for event in substantive:
-        new_steps, pending_intent = _event_to_steps(
-            event, session_id, strip_payloads, pending_intent
-        )
+        new_steps, plan = _event_to_steps(event, session_id, strip_payloads, plan)
         steps.extend(new_steps)
 
     return Trace(
@@ -65,29 +71,68 @@ def _event_to_steps(
     event: dict[str, Any],
     trace_id: str,
     strip: bool,
-    pending_intent: str | None = None,
-) -> tuple[list[Step], str | None]:
+    plan: PlanState,
+) -> tuple[list[Step], PlanState]:
     if event.get("type") == "assistant":
-        return _assistant_steps(event, trace_id, strip, pending_intent)
-    return _user_steps(event, trace_id, strip), pending_intent
+        return _assistant_steps(event, trace_id, strip, plan)
+    return _user_steps(event, trace_id, strip), plan
+
+
+def _extract_todos(block: dict[str, Any]) -> list[dict[str, Any]] | None:
+    if block.get("name") != "TodoWrite":
+        return None
+    input_data = block.get("input")
+    if not isinstance(input_data, dict):
+        return None
+    todos = input_data.get("todos")
+    if not isinstance(todos, list):
+        return None
+    return todos
+
+
+def _active_goal_text(todos: list[dict[str, Any]]) -> str | None:
+    active = [
+        str(todo["content"])
+        for todo in todos
+        if isinstance(todo, dict)
+        and todo.get("content")
+        and todo.get("status") in ("pending", "in_progress")
+    ]
+    if not active:
+        return None
+    return "\n".join(active)
+
+
+def _update_standing_plan(blocks: list[dict[str, Any]], current: str | None) -> str | None:
+    for block in blocks:
+        todos = _extract_todos(block)
+        if todos is not None:
+            current = _active_goal_text(todos)
+    return current
 
 
 def _assistant_steps(
     event: dict[str, Any],
     trace_id: str,
     strip: bool,
-    pending_intent: str | None = None,
-) -> tuple[list[Step], str | None]:
+    plan: PlanState,
+) -> tuple[list[Step], PlanState]:
     content = _content(event)
     narration = _join_text(content)
     tool_uses = [b for b in content if _block_type(b) == "tool_use"]
+    standing_plan = _update_standing_plan(tool_uses, plan.standing_plan)
 
     if not tool_uses:
+        if narration:
+            standing_plan = narration
         action = Action(type=ActionType.UTTERANCE, payload={"text": narration})
-        return (
-            [_make_step(event, 0, trace_id, Actor.AGENT, narration, action)],
-            narration if narration else pending_intent,
+        intent = narration if narration else standing_plan
+        step = _make_step(event, 0, trace_id, Actor.AGENT, intent, action)
+        new_plan = PlanState(
+            pending_intent=narration if narration else plan.pending_intent,
+            standing_plan=standing_plan,
         )
+        return [step], new_plan
 
     steps: list[Step] = []
     for i, block in enumerate(tool_uses):
@@ -95,17 +140,15 @@ def _assistant_steps(
             type=ActionType.TOOL_CALL,
             payload={"name": block.get("name"), "input": _maybe_redact(block.get("input"), strip)},
         )
-        intent = narration if i == 0 and narration else (pending_intent if i == 0 else None)
+        intent = narration if i == 0 and narration else standing_plan
         steps.append(_make_step(event, i, trace_id, Actor.AGENT, intent, action, prev=steps))
-    return steps, None
+    return steps, PlanState(pending_intent=None, standing_plan=standing_plan)
 
 
 def _user_steps(event: dict[str, Any], trace_id: str, strip: bool) -> list[Step]:
     content = event.get("message", {}).get("content") if event.get("message") else None
     tool_results = (
-        [b for b in content if _block_type(b) == "tool_result"]
-        if isinstance(content, list)
-        else []
+        [b for b in content if _block_type(b) == "tool_result"] if isinstance(content, list) else []
     )
     if tool_results:
         steps: list[Step] = []
