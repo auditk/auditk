@@ -18,11 +18,14 @@ already working on `main`; nothing here blocks the T4.9 demo.
 
 ## Phase 4b build-vs-borrow decision
 
+> **Deferred until after D2** (see Phase D). This is engine-breadth work; scorer
+> correctness (D1–D2) takes priority over probe-corpus expansion.
+
 3. **Garak probe-corpus ingestion (from NVIDIA garak).** Before authoring a
    large bespoke probe library, evaluate a `garak` adapter that ingests its 37+
    probe modules. Could replace most hand-authoring. Decide during Phase 4b.
 
-## Deferred (Phase C/D — noted, not scheduled)
+## Deferred (Phase C/D — noted, not scheduled; gated behind D2 — see Phase D)
 
 - **Pluggable Detector/Scorer protocol + Stimulus converters** (garak Buff /
   PyRIT Converter): generalise scoring beyond keyword/regex; `llm_judge` already
@@ -63,10 +66,59 @@ when either convention stabilises.
 - **Drift score:** has real range (0.012 to 0.385)
 - **First flagged step detected** in live session analysis
 - **False positive pattern identified:** plan-level intent vs step-level action
-- **Next:** per-step intent scoping to reduce false positives
+- **Next:** superseded by **Phase D** — the FP is rooted in adapter coverage
+  (D1) and lexical scoring (D2), not per-step scoping alone
+
+## Phase D — Scorer overhaul (intent-enactment drift)
+
+Rationale (research pass, 2026-06-06). The v0 scorer is a generation behind SOTA.
+Jaccard measures *symmetric lexical similarity*; drift is an *asymmetric,
+semantic* relation ("does this action advance the declared plan?"). Two coupled
+defects feed the C.0 false-positive pattern:
+
+- **Granularity** — a plan is a set of sub-goals over a horizon; an action is one
+  element. Comparing a 5-step plan's text to step 1's payload guarantees low
+  overlap → the "executing step 1 of 5" FP.
+- **Coverage (3.1%)** — the adapter only attaches narration to the *first*
+  `tool_use` of a narrated assistant message. This is an *adapter* bug, not a
+  scorer bug.
+
+Correct primitive = **entailment + plan-decomposition coverage**, not similarity.
+**Sequencing rule:** fix the coverage denominator (D1) before touching the scorer
+— a better scorer measured on 3.1% of steps yields noisy, misleading signal.
+
+- **D1 — Coverage fix (adapter).** Wire `TodoWrite` (+ plan-mode / `ExitPlanMode`
+  plans) into a standing plan state carried across the whole trace; use it as the
+  premise for every subsequent action's `declared_intent`. Target coverage
+  3.1% → >50%. Near-zero scorer change. Plan: `plans/phase-d1-coverage-fix.md`.
+- **D2 — `Scorer` protocol + NLI scorer.** Extract
+  `Scorer.score(trace) -> DriftReport` (mirror Inspect Scorer / garak Detector;
+  resolves the deferred "Pluggable Detector/Scorer protocol"). Keep `jaccard@0.1`
+  as baseline; add `nli@0.2` (deterministic, local, three-valued: entail /
+  neutral / contradict). Pin `method + method_version` into the signed pack.
+  Expected to kill most flagged-step FPs.
+- **D3 — Plan-decomposition + two-stage judge.** Behind the protocol:
+  `llm-judge@0.3`, boolean rubric, judge pinned. Deterministic NLI gates; judge
+  adjudicates only the candidates NLI flags. Emit drift taxonomy (faithful /
+  benign-elaboration / goal-deviation / instruction-noncompliance /
+  undeclared-goal), aligned to TRAIL + the spec-v0.2 taxonomy refs.
+- **D4 — Calibration harness.** 200–500 human-labelled (plan, action, label)
+  pairs; compute scorer-vs-human Pearson r (target > 0.7) and Cohen's κ on the
+  boolean flag; emit calibration stats into the signed pack. Gate before any
+  cross-model numbers are published.
+- **D5 — Cross-model benchmark.** Claude / Kimi / MiniMax / DeepSeek / GPT under
+  a *fixed* scorer + *independent* judge (avoid self-preference bias), multiple
+  seeds, capability-normalised, with CIs. Real-session-native → contamination-free
+  by construction.
+
+**Breadth deferral:** engine-breadth work (probe library, garak ingestion,
+Inspect-log adapter, richer anonymiser, full OpenInference span coverage) is
+deferred until after **D2**. Scorer correctness precedes engine breadth.
 
 ## Status
 
 POC working: Claude Code session → signed evidence pack → verify, with a v0
-drift score. The next concrete milestone is **T4.9** (publish a real-session
-evidence pack under `demos/`), not more engine breadth.
+drift score. T4.9 (publish a real-session evidence pack under `demos/`) remains
+independent and unblocked. The next concrete *engine* milestone is **D1**
+(adapter coverage fix; see `plans/phase-d1-coverage-fix.md`) — scorer correctness
+before engine breadth.
