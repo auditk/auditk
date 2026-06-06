@@ -49,10 +49,10 @@ when either convention stabilises.
 - [ ] SPDX header on source files (`# SPDX-License-Identifier: Apache-2.0`)
 - [ ] `README` reflects POC-first reality (core ✅, spec ✅)
 - [ ] `CODE_OF_CONDUCT.md`
-- [ ] Wire CI (lint + mypy + pytest) — surfaces the pre-existing strict errors
-- [ ] Fix pre-existing `mypy --strict` errors (`loader.py`, `langgraph.py`)
-- [ ] Harden `verify` to reject empty-signature packs
-- [ ] `.gitignore` excludes keys/packs (confirm `*.ed25519`, `evidence-pack*.json`)
+- [x] Wire CI (lint + mypy + pytest) — surfaces the pre-existing strict errors ✅
+- [x] Fix pre-existing `mypy --strict` errors (`loader.py`, `langgraph.py`) ✅
+- [x] Harden `verify` to reject empty-signature packs ✅
+- [x] `.gitignore` excludes keys/packs (confirm `*.ed25519`, `evidence-pack*.json`) ✅
 - [ ] Pin / declare Python version support; ensure `pip install -e .` clean
 - [ ] Decide public-org transfer (`auditk`) vs stay private
 
