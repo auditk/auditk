@@ -56,6 +56,15 @@ when either convention stabilises.
 - [ ] Pin / declare Python version support; ensure `pip install -e .` clean
 - [ ] Decide public-org transfer (`auditk`) vs stay private
 
+## Phase C.0 — Claude Code adapter intent-extraction audit
+
+- [x] **Complete.** `pending_intent` carried across separate assistant messages
+- **Coverage:** 3.1% (intent extraction still sparse)
+- **Drift score:** has real range (0.012 to 0.385)
+- **First flagged step detected** in live session analysis
+- **False positive pattern identified:** plan-level intent vs step-level action
+- **Next:** per-step intent scoping to reduce false positives
+
 ## Status
 
 POC working: Claude Code session → signed evidence pack → verify, with a v0
