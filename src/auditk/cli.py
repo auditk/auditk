@@ -95,9 +95,11 @@ def attest(
         ]
     else:
         raw = json.loads(traces_path.read_text())
-        trace_list = [Trace.model_validate(raw)] if isinstance(raw, dict) else [
-            Trace.model_validate(item) for item in raw
-        ]
+        trace_list = (
+            [Trace.model_validate(raw)]
+            if isinstance(raw, dict)
+            else [Trace.model_validate(item) for item in raw]
+        )
 
     probe_results: list[ProbeResult] = []
     if probe_results_file:
@@ -160,17 +162,50 @@ def verify(
     from auditk.attestation.signer import LocalEd25519Verifier
     from auditk.schema import EvidencePack
 
-    pack_obj = EvidencePack.model_validate(json.loads(Path(pack).read_text()))
+    pack_path = Path(pack)
+    if not pack_path.exists():
+        typer.echo(f"✗ Verification failed: evidence pack not found: {pack}")
+        raise typer.Exit(1)
+
+    try:
+        raw_pack = json.loads(pack_path.read_text())
+    except json.JSONDecodeError as exc:
+        typer.echo(f"✗ Verification failed: evidence pack contains invalid JSON: {exc}")
+        raise typer.Exit(1) from None
+
+    try:
+        pack_obj = EvidencePack.model_validate(raw_pack)
+    except Exception as exc:
+        typer.echo(f"✗ Verification failed: evidence pack is malformed: {exc}")
+        raise typer.Exit(1) from None
+
     if not pack_obj.signatures:
         typer.echo("✗ Verification failed: evidence pack has no signatures")
         raise typer.Exit(1)
-    trusted_pub_pem = Path(public_key).read_text()
+
+    pub_key_path = Path(public_key)
+    if not pub_key_path.exists():
+        typer.echo(f"✗ Verification failed: public key not found: {public_key}")
+        raise typer.Exit(1)
+
+    try:
+        trusted_pub_pem = pub_key_path.read_text()
+    except Exception as exc:
+        typer.echo(f"✗ Verification failed: could not read public key: {exc}")
+        raise typer.Exit(1) from None
+
+    try:
+        verifier = LocalEd25519Verifier(trusted_pub_pem)
+    except Exception as exc:
+        typer.echo(f"✗ Verification failed: public key is malformed: {exc}")
+        raise typer.Exit(1) from None
+
     manifest = pack_obj.model_dump(mode="json", exclude={"signatures"})
     canonical = canonicalize(manifest)
 
     for sig in pack_obj.signatures:
         try:
-            LocalEd25519Verifier(trusted_pub_pem).verify(canonical, sig.signature)
+            verifier.verify(canonical, sig.signature)
         except Exception as exc:
             typer.echo(f"✗ Verification failed: {exc}")
             raise typer.Exit(1) from exc
