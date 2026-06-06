@@ -45,8 +45,12 @@ def ingest_claude_code_session(
 
     session_id = str(substantive[0].get("sessionId") or "unknown")
     steps: list[Step] = []
+    pending_intent: str | None = None
     for event in substantive:
-        steps.extend(_event_to_steps(event, session_id, strip_payloads))
+        new_steps, pending_intent = _event_to_steps(
+            event, session_id, strip_payloads, pending_intent
+        )
+        steps.extend(new_steps)
 
     return Trace(
         trace_id=session_id,
@@ -61,20 +65,29 @@ def _event_to_steps(
     event: dict[str, Any],
     trace_id: str,
     strip: bool,
-) -> list[Step]:
+    pending_intent: str | None = None,
+) -> tuple[list[Step], str | None]:
     if event.get("type") == "assistant":
-        return _assistant_steps(event, trace_id, strip)
-    return _user_steps(event, trace_id, strip)
+        return _assistant_steps(event, trace_id, strip, pending_intent)
+    return _user_steps(event, trace_id, strip), pending_intent
 
 
-def _assistant_steps(event: dict[str, Any], trace_id: str, strip: bool) -> list[Step]:
+def _assistant_steps(
+    event: dict[str, Any],
+    trace_id: str,
+    strip: bool,
+    pending_intent: str | None = None,
+) -> tuple[list[Step], str | None]:
     content = _content(event)
     narration = _join_text(content)
     tool_uses = [b for b in content if _block_type(b) == "tool_use"]
 
     if not tool_uses:
         action = Action(type=ActionType.UTTERANCE, payload={"text": narration})
-        return [_make_step(event, 0, trace_id, Actor.AGENT, narration, action)]
+        return (
+            [_make_step(event, 0, trace_id, Actor.AGENT, narration, action)],
+            narration if narration else pending_intent,
+        )
 
     steps: list[Step] = []
     for i, block in enumerate(tool_uses):
@@ -82,9 +95,9 @@ def _assistant_steps(event: dict[str, Any], trace_id: str, strip: bool) -> list[
             type=ActionType.TOOL_CALL,
             payload={"name": block.get("name"), "input": _maybe_redact(block.get("input"), strip)},
         )
-        intent = narration if i == 0 else None
+        intent = narration if i == 0 and narration else (pending_intent if i == 0 else None)
         steps.append(_make_step(event, i, trace_id, Actor.AGENT, intent, action, prev=steps))
-    return steps
+    return steps, None
 
 
 def _user_steps(event: dict[str, Any], trace_id: str, strip: bool) -> list[Step]:

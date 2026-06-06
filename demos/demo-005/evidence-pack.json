@@ -1,0 +1,47 @@
+{
+  "pack_id": "eaec2dfb-ad06-4d9c-a1cf-d5ceaf644af6",
+  "spec_version": "v0.1",
+  "issued_at": "2026-06-03T17:41:04.570469Z",
+  "issuer": {
+    "name": "Matt Haiko",
+    "organization": null,
+    "contact": null
+  },
+  "subject": {
+    "agent_config_ref": "claude-code",
+    "agent_version": "2.1.119",
+    "tenant_id": null
+  },
+  "jurisdiction_claims": [],
+  "probe_results": [],
+  "drift_metrics": {
+    "drift_score": 0.09874657313592339,
+    "drift_per_trace": {
+      "0ba8af30-6812-4308-a847-8ec52087e58b": 0.09874657313592339
+    },
+    "flagged_steps": [],
+    "method": "plan-action-similarity",
+    "method_version": "0.1"
+  },
+  "counterfactual_diffs": [],
+  "trace_summary": {
+    "trace_count": 1,
+    "step_count": 77,
+    "flow_types": [
+      "code"
+    ],
+    "time_range": [
+      "2026-06-03T17:39:33.114000Z",
+      "2026-06-03T17:40:40.639000Z"
+    ]
+  },
+  "signatures": [
+    {
+      "signer": "local-ed25519",
+      "algorithm": "ed25519",
+      "public_key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA7nxWeMNTpwDenAfHbGEtd8lOlx9TY1Zu+XobxXIr7cQ=\n-----END PUBLIC KEY-----\n",
+      "signature": "C+MocbaUHvIwOVlyxzbZhjhykg+Ptpcj94kNUjE9sd8TLqVvePyktU4jzDYLEiuBOd0dLw82UdcEo9X4qaPuDw==",
+      "issued_at": "2026-06-03T17:41:04.571290Z"
+    }
+  ]
+}

@@ -80,6 +80,29 @@ def test_strip_payloads_redacts_tool_input() -> None:
     assert tool_call.action.payload["input"] == {"redacted": True, "size": pytest.approx(len(str({"command": "ls sandbox/"})), abs=0)}
 
 
+def test_intent_carried_across_separate_messages() -> None:
+    trace = ingest_claude_code_session(_load("session-separate-intent.jsonl"))
+    # user + assistant(text) + assistant(tool_call) + tool(env_effect) + assistant(utterance)
+    assert len(trace.steps) == 5
+    text_step = trace.steps[1]
+    assert text_step.action.type == ActionType.UTTERANCE
+    assert text_step.declared_intent == "I will list the directory contents."
+    tool_call = trace.steps[2]
+    assert tool_call.action.type == ActionType.TOOL_CALL
+    assert tool_call.declared_intent == "I will list the directory contents."
+    _validate_against_spec(trace)
+
+
+def test_inline_narration_preferred_over_pending_intent() -> None:
+    trace = ingest_claude_code_session(_load("session-prefer-inline.jsonl"))
+    # user + assistant(text) + assistant(tool_call) + tool(env_effect)
+    assert len(trace.steps) == 4
+    tool_call = trace.steps[2]
+    assert tool_call.action.type == ActionType.TOOL_CALL
+    assert tool_call.declared_intent == "Actually, let me use ls instead."
+    _validate_against_spec(trace)
+
+
 def test_adapter_class_matches_function() -> None:
     events = _load("session-text-only.jsonl")
     via_class = ClaudeCodeTraceAdapter().ingest(events)
