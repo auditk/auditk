@@ -90,6 +90,9 @@ def attest(
     scorer: str = typer.Option(
         "jaccard", "--scorer", help="Scorer to use: jaccard, nli, or llm-judge."
     ),
+    verbose: bool = typer.Option(
+        False, "--verbose", help="Print each step's taxonomy label and reasoning as it's scored."
+    ),
 ) -> None:
     """Build and sign an evidence pack from traces + optional probe results."""
     from auditk.attestation.pack import build
@@ -147,6 +150,7 @@ def attest(
         subject=Subject(agent_config_ref=agent_id, agent_version=agent_version),
         signer=signer_obj,
         scorer_key=scorer_key,
+        verbose=verbose,
     )
     Path(out).write_text(pack.model_dump_json(indent=2))
     typer.echo(f"Evidence pack written to {out}. Pack ID: {pack.pack_id}")

@@ -138,3 +138,25 @@ def test_compute_drift_is_deterministic():
     report_a = compute_drift(trace)
     report_b = compute_drift(trace)
     assert report_a == report_b
+
+
+# ---------------------------------------------------------------------------
+# Test 7: per_step populated by JaccardScorer
+# ---------------------------------------------------------------------------
+def test_jaccard_per_step_populated():
+    steps = [
+        _make_step("s-1", "order lookup", {"order": "lookup"}),
+        _make_step(
+            "s-2",
+            "retrieve payment",
+            {"output": "completely unrelated jargon here"},
+        ),
+    ]
+    report = compute_drift(_make_trace(steps))
+    assert report.per_step is not None
+    assert "s-1" in report.per_step
+    assert "s-2" in report.per_step
+    assert report.per_step["s-1"].label.value == "faithful"
+    assert report.per_step["s-2"].label.value == "goal_deviation"
+    assert "Jaccard" in report.per_step["s-1"].reasoning
+    assert "Jaccard" in report.per_step["s-2"].reasoning

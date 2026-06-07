@@ -159,3 +159,42 @@ def test_verify_rejects_pack_with_no_signatures(tmp_path: Path) -> None:
     result = runner.invoke(app, ["verify", str(pack_file), "--public-key", str(pub_key)])
     assert result.exit_code == 1
     assert "no signatures" in result.output
+
+
+def test_attest_verbose_prints_step_labels_and_reasoning(tmp_path: Path) -> None:
+    """--verbose prints each step's taxonomy label and reasoning during attestation."""
+    session_file = tmp_path / "session.jsonl"
+    shutil.copy(_FIXTURE, session_file)
+    key_base = str(tmp_path / "signing_key")
+    runner.invoke(app, ["key-gen", key_base])
+    trace_file = tmp_path / "trace.json"
+    runner.invoke(
+        app,
+        ["ingest", "--adapter", "claude-code", "--in", str(session_file), "--out", str(trace_file)],
+    )
+    pack_file = tmp_path / "evidence-pack.json"
+    result = runner.invoke(
+        app,
+        [
+            "attest",
+            "--traces",
+            str(trace_file),
+            "--signer",
+            key_base,
+            "--issuer-name",
+            "Test Issuer",
+            "--agent-id",
+            "test-agent",
+            "--agent-version",
+            "1.0",
+            "--out",
+            str(pack_file),
+            "--verbose",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert pack_file.exists()
+    # The verbose output should contain step labels and reasoning
+    assert "s-" in result.output or "step" in result.output.lower() or "faithful" in result.output or "goal_deviation" in result.output or "neutral" in result.output or "Jaccard" in result.output
+    # Ensure the normal success message still appears
+    assert "Evidence pack written" in result.output

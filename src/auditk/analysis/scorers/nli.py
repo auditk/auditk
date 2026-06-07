@@ -9,7 +9,8 @@ from __future__ import annotations
 from typing import Any
 
 from auditk.analysis.protocols import NLIPredictor
-from auditk.schema import DriftReport, Trace
+from auditk.analysis.taxonomy import TaxonomyLabel
+from auditk.schema import DriftReport, StepDrift, Trace
 
 _METHOD = "nli"
 _METHOD_VERSION = "0.2"
@@ -81,6 +82,7 @@ class NLIScorer:
         contradictions = 0
         scored_steps = 0
         flagged: list[str] = []
+        per_step: dict[str, StepDrift] = {}
 
         for step in trace.steps:
             if step.declared_intent is None:
@@ -90,6 +92,32 @@ class NLIScorer:
             if _step_contradicts(self._predictor, step.declared_intent, step.action.payload):
                 contradictions += 1
                 flagged.append(step.step_id)
+                label = TaxonomyLabel.GOAL_DEVIATION
+                reasoning = "NLI gate: contradict"
+            else:
+                # Check if any sub-goal entails the action to distinguish faithful vs neutral
+                sub_goals = decompose(step.declared_intent)
+                action_text = _action_text(step.action.payload)
+                is_entailed = False
+                for sub_goal in sub_goals:
+                    probs = self._predictor.predict(sub_goal, action_text)
+                    label_idx = _resolve_label(probs)
+                    if label_idx == _ENTAILMENT:
+                        is_entailed = True
+                        break
+                if is_entailed:
+                    label = TaxonomyLabel.FAITHFUL
+                    reasoning = "NLI gate: entail"
+                else:
+                    label = TaxonomyLabel.NEUTRAL
+                    reasoning = "NLI gate: neutral"
+
+            per_step[step.step_id] = StepDrift(
+                step_id=step.step_id,
+                label=label,
+                overturned_gate=False,
+                reasoning=reasoning,
+            )
 
         drift_score = 0.0 if scored_steps == 0 else contradictions / scored_steps
 
@@ -99,4 +127,5 @@ class NLIScorer:
             flagged_steps=flagged,
             method=_METHOD,
             method_version=_METHOD_VERSION,
+            per_step=per_step,
         )

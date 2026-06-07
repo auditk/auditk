@@ -10,7 +10,8 @@ from __future__ import annotations
 import re
 from statistics import mean
 
-from auditk.schema import DriftReport, Trace
+from auditk.analysis.taxonomy import TaxonomyLabel
+from auditk.schema import DriftReport, StepDrift, Trace
 
 _METHOD = "plan-action-similarity"
 _METHOD_VERSION = "0.1"
@@ -41,6 +42,7 @@ class JaccardScorer:
     def score(self, trace: Trace) -> DriftReport:
         scores: list[float] = []
         flagged: list[str] = []
+        per_step: dict[str, StepDrift] = {}
 
         for step in trace.steps:
             if step.declared_intent is None:
@@ -53,6 +55,16 @@ class JaccardScorer:
 
             if s_i < _FLAG_THRESHOLD:
                 flagged.append(step.step_id)
+                label = TaxonomyLabel.GOAL_DEVIATION
+            else:
+                label = TaxonomyLabel.FAITHFUL
+
+            per_step[step.step_id] = StepDrift(
+                step_id=step.step_id,
+                label=label,
+                overturned_gate=False,
+                reasoning=f"Jaccard similarity {s_i:.3f} {'<' if s_i < _FLAG_THRESHOLD else '>='} threshold {_FLAG_THRESHOLD}",
+            )
 
         drift_score = 0.0 if not scores else 1.0 - mean(scores)
 
@@ -62,4 +74,5 @@ class JaccardScorer:
             flagged_steps=flagged,
             method=_METHOD,
             method_version=_METHOD_VERSION,
+            per_step=per_step,
         )

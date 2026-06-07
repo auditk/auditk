@@ -109,3 +109,15 @@ def test_empty_traces_produces_zero_counts(fake_signer: FakeSigner) -> None:
     pack = build(traces=[], **_common_kwargs(fake_signer))
     assert pack.trace_summary.trace_count == 0
     assert pack.trace_summary.step_count == 0
+
+
+def test_build_verbose_prints_per_step(sample_trace: Trace, fake_signer: FakeSigner, capsys) -> None:
+    """build(verbose=True) prints each step's taxonomy label and reasoning to stdout."""
+    pack = build(traces=[sample_trace], verbose=True, **_common_kwargs(fake_signer))
+    captured = capsys.readouterr()
+    assert pack.drift_metrics is not None
+    assert pack.drift_metrics.per_step is not None
+    for step_id, step_drift in pack.drift_metrics.per_step.items():
+        assert step_id in captured.out
+        assert step_drift.label.value in captured.out
+        assert step_drift.reasoning in captured.out

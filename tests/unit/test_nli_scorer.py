@@ -183,6 +183,39 @@ def test_nli_scorer_deterministic() -> None:
     assert report_a == report_b
 
 
+# --- per_step population ---
+
+
+def test_nli_per_step_populated() -> None:
+    """NLIScorer returns per_step with taxonomy labels and reasoning."""
+    from auditk.analysis.scorers.nli import NLIScorer
+
+    predictor = FakeNLIPredictor(
+        {
+            ("goal-1", "act-1"): (0.1, 0.8, 0.1),  # entail
+            ("goal-2", "act-2"): (0.8, 0.1, 0.1),  # contradict
+            ("goal-3", "act-3"): (0.1, 0.1, 0.8),  # neutral
+        }
+    )
+    scorer = NLIScorer(predictor=predictor)
+    trace = _make_trace(
+        [
+            _make_step("s-1", "goal-1", {"text": "act-1"}),
+            _make_step("s-2", "goal-2", {"text": "act-2"}),
+            _make_step("s-3", "goal-3", {"text": "act-3"}),
+        ]
+    )
+    report = scorer.score(trace)
+    assert report.per_step is not None
+    assert len(report.per_step) == 3
+    assert report.per_step["s-1"].label.value == "faithful"
+    assert report.per_step["s-2"].label.value == "goal_deviation"
+    assert report.per_step["s-3"].label.value == "neutral"
+    assert "NLI" in report.per_step["s-1"].reasoning
+    assert "NLI" in report.per_step["s-2"].reasoning
+    assert "NLI" in report.per_step["s-3"].reasoning
+
+
 # --- Decomposition ---
 
 

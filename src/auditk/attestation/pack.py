@@ -28,11 +28,16 @@ def build(
     subject: Subject,
     signer: Signer,
     scorer_key: str | None = None,
+    verbose: bool = False,
 ) -> EvidencePack:
     """Build and sign an EvidencePack from traces and probe results."""
     now = datetime.now(UTC)
     summary = _build_summary(traces, now)
     drift = compute_drift(traces[0], scorer_key) if traces else None
+
+    if verbose and drift is not None and drift.per_step:
+        for step_id, step_drift in drift.per_step.items():
+            print(f"{step_id}: {step_drift.label.value} — {step_drift.reasoning}")
 
     pack = EvidencePack(
         pack_id=uuid4(),
