@@ -91,12 +91,13 @@ Correct primitive = **entailment + plan-decomposition coverage**, not similarity
   plans) into a standing plan state carried across the whole trace; use it as the
   premise for every subsequent action's `declared_intent`. Target coverage
   3.1% → >50%. Near-zero scorer change. Plan: `plans/phase-d1-coverage-fix.md`.
-- **D2 — `Scorer` protocol + NLI scorer.** Extract
+- [x] **D2 — `Scorer` protocol + NLI scorer.** Extract
   `Scorer.score(trace) -> DriftReport` (mirror Inspect Scorer / garak Detector;
   resolves the deferred "Pluggable Detector/Scorer protocol"). Keep `jaccard@0.1`
   as baseline; add `nli@0.2` (deterministic, local, three-valued: entail /
   neutral / contradict). Pin `method + method_version` into the signed pack.
-  Expected to kill most flagged-step FPs.
+  **Results:** Jaccard post-D1: 0.926 drift, 40/42 flagged (false positive cascade).
+  NLI post-D2: 0.262 drift, 11/42 flagged (**72% FP reduction**).
 - **D3 — Plan-decomposition + two-stage judge.** Behind the protocol:
   `llm-judge@0.3`, boolean rubric, judge pinned. Deterministic NLI gates; judge
   adjudicates only the candidates NLI flags. Emit drift taxonomy (faithful /
@@ -117,8 +118,8 @@ deferred until after **D2**. Scorer correctness precedes engine breadth.
 
 ## Status
 
-POC working: Claude Code session → signed evidence pack → verify, with a v0
-drift score. T4.9 (publish a real-session evidence pack under `demos/`) remains
-independent and unblocked. The next concrete *engine* milestone is **D1**
-(adapter coverage fix; see `plans/phase-d1-coverage-fix.md`) — scorer correctness
-before engine breadth.
+POC working: Claude Code session → signed evidence pack → verify, with NLI drift
+scoring live. T4.9 (publish a real-session evidence pack under `demos/`) remains
+independent and unblocked. **D2 complete.** The next concrete *engine* milestone
+is **D3** (two-stage judge: deterministic NLI gates + LLM judge adjudicates
+flagged candidates; plan-decomposition + taxonomy).
