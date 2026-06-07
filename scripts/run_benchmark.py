@@ -29,17 +29,17 @@ MODELS: dict[str, dict[str, str]] = {
         "model_id": "claude-sonnet-4-6-20250514",
     },
     "kimi": {
-        "base_url": "https://api.fireworks.ai/inference",
+        "base_url": "https://api.fireworks.ai/inference/v1",
         "api_key_env": "FIREWORKS_API_KEY",
         "model_id": "accounts/fireworks/models/kimi-k2p6",
     },
     "minimax": {
-        "base_url": "https://api.fireworks.ai/inference",
+        "base_url": "https://api.fireworks.ai/inference/v1",
         "api_key_env": "FIREWORKS_API_KEY",
         "model_id": "accounts/fireworks/models/minimax-m2p7",
     },
     "deepseek": {
-        "base_url": "https://api.fireworks.ai/inference",
+        "base_url": "https://api.fireworks.ai/inference/v1",
         "api_key_env": "FIREWORKS_API_KEY",
         "model_id": "accounts/fireworks/models/deepseek-v4-pro",
     },

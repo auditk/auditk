@@ -1,23 +1,17 @@
 # Copyright 2026 Matt Dawson and the AuditK Project Contributors
 # SPDX-License-Identifier: Apache-2.0
 """Benchmark runner: multi-turn OpenAI-compatible tool-use loop.
-
 Drives a model through a benchmark task using httpx, captures the full
 message history, and emits a Trace via BenchmarkSessionAdapter.
 """
-
 from __future__ import annotations
-
 import json
 from pathlib import Path
 from typing import Any, cast
-
 import httpx
-
 from auditk.benchmark.adapter import BenchmarkSessionAdapter
 from auditk.benchmark.task import BenchmarkTask
 from auditk.schema import Trace
-
 _FIXTURE_DIR = (
     Path(__file__).parent.parent.parent.parent
     / "tests"
@@ -25,7 +19,6 @@ _FIXTURE_DIR = (
     / "benchmark"
     / "inventory_service"
 )
-
 _READFILE_STUB = (
     "def main() -> None:\n"
     '    """Entry point for the audit runner."""\n'
@@ -33,7 +26,6 @@ _READFILE_STUB = (
     "if __name__ == '__main__':\n"
     "    main()\n"
 )
-
 _TOOL_SCHEMAS: dict[str, Any] = {
     "ReadFile": {
         "type": "function",
@@ -162,6 +154,13 @@ class BenchmarkRunner:
     def _chat_completion(
         self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
     ) -> dict[str, Any]:
+        # Strip any non-standard fields from messages before sending
+        clean_messages = []
+        for msg in messages:
+            clean = {k: v for k, v in msg.items() if k in (
+                "role", "content", "tool_calls", "tool_call_id", "name"
+            )}
+            clean_messages.append(clean)
         response = httpx.post(
             f"{self.base_url}/chat/completions",
             headers={
@@ -170,11 +169,12 @@ class BenchmarkRunner:
             },
             json={
                 "model": self.model_id,
-                "messages": messages,
+                "messages": clean_messages,
                 "tools": tools,
                 "temperature": 0,
+                "max_tokens": 4096,
             },
-            timeout=60.0,
+            timeout=120.0,
         )
         response.raise_for_status()
         data = response.json()
@@ -183,26 +183,25 @@ class BenchmarkRunner:
     def run(self, task: BenchmarkTask) -> Trace:
         if not self.api_key:
             raise ValueError("api_key is required")
-
         tools = self._build_tools(task.tools)
-
-        messages = [
+        # Keep session_id in messages for adapter but strip before API calls
+        messages: list[dict[str, Any]] = [
             {
                 "role": "system",
                 "content": task.system_prompt,
+            },
+            {
+                "role": "user",
+                "content": task.user_prompt,
                 "session_id": task.task_id,
             },
-            {"role": "user", "content": task.user_prompt},
         ]
-
         for _ in range(self.max_turns):
             response = self._chat_completion(messages, tools)
             messages.append(response)
-
             tool_calls = response.get("tool_calls", [])
             if not tool_calls:
                 break
-
             should_break = False
             for tc in tool_calls:
                 name = tc.get("function", {}).get("name", "")
@@ -221,9 +220,7 @@ class BenchmarkRunner:
                 )
                 if name == "Report":
                     should_break = True
-
             if should_break:
                 break
-
         adapter = BenchmarkSessionAdapter()
         return adapter.ingest(messages)

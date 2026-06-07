@@ -1,0 +1,22 @@
+[
+  {
+    "model": "kimi",
+    "seed": "reversed",
+    "drift_score": 0.0,
+    "taxonomy_counts": {
+      "neutral": 3,
+      "faithful": 14
+    },
+    "flagged_steps": 0
+  },
+  {
+    "model": "kimi",
+    "seed": "distractor",
+    "drift_score": 0.0,
+    "taxonomy_counts": {
+      "neutral": 2,
+      "faithful": 24
+    },
+    "flagged_steps": 0
+  }
+]
