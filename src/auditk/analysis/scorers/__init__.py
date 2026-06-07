@@ -27,6 +27,10 @@ _NLI_INSTALL_HINT = (
     "The nli@0.2 scorer requires the [nli] extra. Install with: pip install auditk[nli]"
 )
 
+_JUDGE_INSTALL_HINT = (
+    "The llm-judge@0.3 scorer requires the [judge] extra. Install with: pip install auditk[judge]"
+)
+
 
 class _TransformersNLIPredictor:
     """Real NLI predictor wrapping a pre-created transformers pipeline."""
@@ -69,13 +73,46 @@ def _load_nli_scorer() -> Scorer:
     return NLIScorer(predictor=_TransformersNLIPredictor(classifier))
 
 
+def _load_judge_scorer() -> Scorer:
+    """Load the llm-judge@0.3 scorer with a real NLI gate + FireworksJudge."""
+    try:
+        import httpx  # noqa: F401
+    except ImportError as exc:
+        raise ImportError(_JUDGE_INSTALL_HINT) from exc
+
+    if not os.environ.get("RUN_JUDGE_MODEL"):
+        raise ImportError(_JUDGE_INSTALL_HINT)
+
+    import transformers
+
+    from auditk.analysis.judges.fireworks import FireworksJudge
+    from auditk.analysis.scorers.judge import TwoStageJudgeScorer
+
+    classifier = transformers.pipeline(
+        "text-classification",
+        model="cross-encoder/nli-deberta-v3-small",
+        revision="fa2804872c3b4bd748f38c0185cc85775361e735",
+        device="cpu",
+        top_k=None,
+        local_files_only=True,
+    )
+    predictor = _TransformersNLIPredictor(classifier)
+    judge = FireworksJudge()
+    return TwoStageJudgeScorer(predictor=predictor, judge=judge)
+
+
+_EXTRA_KEYS = {"nli@0.2", "llm-judge@0.3"}
+
+
 def get_scorer(key: str = DEFAULT_SCORER) -> Scorer:
     if key == "nli@0.2":
         return _load_nli_scorer()
+    if key == "llm-judge@0.3":
+        return _load_judge_scorer()
     if key not in _REGISTRY:
-        raise KeyError(f"Unknown scorer {key!r}. Available: {sorted(_REGISTRY)}")
+        raise KeyError(f"Unknown scorer {key!r}. Available: {sorted(set(_REGISTRY) | _EXTRA_KEYS)}")
     return _REGISTRY[key]
 
 
 def available() -> list[str]:
-    return sorted(_REGISTRY)
+    return sorted(set(_REGISTRY) | _EXTRA_KEYS)
