@@ -104,6 +104,61 @@ def test_attest_with_nli_scorer_missing_extra_fails_gracefully(tmp_path: Path, m
     assert "auditk[nli]" in result.output or "nli" in result.output.lower()
 
 
+def test_scorer_map_includes_llm_judge() -> None:
+    """The CLI _SCORER_MAP must register the llm-judge alias."""
+    from auditk.cli import _SCORER_MAP
+
+    assert "llm-judge" in _SCORER_MAP
+    assert _SCORER_MAP["llm-judge"] == "llm-judge@0.3"
+
+
+def test_attest_with_llm_judge_scorer_missing_env_fails_gracefully(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """--scorer llm-judge without RUN_JUDGE_MODEL=1 fails with an actionable message."""
+    trace_file = tmp_path / "trace.json"
+    _write_minimal_trace(trace_file)
+    key_base = str(tmp_path / "key")
+
+    runner.invoke(app, ["key-gen", key_base])
+
+    # Ensure RUN_JUDGE_MODEL is not set so the scorer refuses to load
+    monkeypatch.delenv("RUN_JUDGE_MODEL", raising=False)
+
+    pack_file = tmp_path / "pack.json"
+    result = runner.invoke(
+        app,
+        [
+            "attest",
+            "--traces",
+            str(trace_file),
+            "--signer",
+            key_base,
+            "--issuer-name",
+            "Test",
+            "--agent-id",
+            "a",
+            "--agent-version",
+            "1",
+            "--out",
+            str(pack_file),
+            "--scorer",
+            "llm-judge",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "Set RUN_JUDGE_MODEL=1 and ensure FIREWORKS_API_KEY is set" in result.output
+
+
+def test_attest_help_text_lists_all_scorer_options() -> None:
+    """The --scorer help text must list all three scorer options."""
+    result = runner.invoke(app, ["attest", "--help"])
+    assert result.exit_code == 0
+    assert "jaccard" in result.output
+    assert "nli" in result.output
+    assert "llm-judge" in result.output
+
+
 def test_attest_with_invalid_scorer_fails(tmp_path: Path) -> None:
     """An unknown --scorer value is rejected."""
     trace_file = tmp_path / "trace.json"

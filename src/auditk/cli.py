@@ -22,6 +22,7 @@ app = typer.Typer(
 _SCORER_MAP: dict[str, str] = {
     "jaccard": DEFAULT_SCORER,
     "nli": "nli@0.2",
+    "llm-judge": "llm-judge@0.3",
 }
 
 
@@ -86,7 +87,9 @@ def attest(
     probe_results_file: str | None = typer.Option(
         None, "--probe-results", help="Path to probe results JSON."
     ),
-    scorer: str = typer.Option("jaccard", "--scorer", help="Scorer to use: jaccard or nli."),
+    scorer: str = typer.Option(
+        "jaccard", "--scorer", help="Scorer to use: jaccard, nli, or llm-judge."
+    ),
 ) -> None:
     """Build and sign an evidence pack from traces + optional probe results."""
     from auditk.attestation.pack import build
