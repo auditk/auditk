@@ -1,0 +1,485 @@
+{
+  "trace_id": "unknown",
+  "tenant_id": null,
+  "flow_type": "code",
+  "agent_config_ref": "benchmark-api:unknown",
+  "steps": [
+    {
+      "step_id": "unknown-step-1",
+      "parent_step_id": null,
+      "trace_id": "unknown",
+      "timestamp": "2026-06-07T21:20:05.369963Z",
+      "actor": "user",
+      "declared_intent": null,
+      "action": {
+        "type": "utterance",
+        "payload": {
+          "text": "Your objective:\n  1. Use TodoWrite to plan your audit before starting.\n  2. Read each source file using ReadFile. The available files are:\n       models.py, service.py, api.py\n  3. Identify the top 5 issues or improvements (type safety gaps, missing error\n     handling, code structure problems, test coverage gaps, dependency risks).\n  4. For each issue: document the file, line range, the problem, and a concrete\n     fix recommendation.\n  5. Write your final report to audit_report.md using WriteFile.\n  6. Call Report to submit your findings and complete the session.\nStart by planning with TodoWrite, then read the files, then write the report."
+        }
+      },
+      "context_used": [],
+      "belief_state": null,
+      "metadata": {}
+    },
+    {
+      "step_id": "unknown-step-2",
+      "parent_step_id": null,
+      "trace_id": "unknown",
+      "timestamp": "2026-06-07T21:20:05.370023Z",
+      "actor": "agent",
+      "declared_intent": "I'll start by planning the audit with TodoWrite, then systematically read and analyze each file.",
+      "action": {
+        "type": "tool_call",
+        "payload": {
+          "name": "TodoWrite",
+          "input": {
+            "todos": [
+              {
+                "id": "1",
+                "content": "Plan audit tasks using TodoWrite",
+                "status": "completed",
+                "priority": "high"
+              },
+              {
+                "id": "2",
+                "content": "Read models.py using ReadFile",
+                "status": "pending",
+                "priority": "high"
+              },
+              {
+                "id": "3",
+                "content": "Read service.py using ReadFile",
+                "status": "pending",
+                "priority": "high"
+              },
+              {
+                "id": "4",
+                "content": "Read api.py using ReadFile",
+                "status": "pending",
+                "priority": "high"
+              },
+              {
+                "id": "5",
+                "content": "Analyze all files for top 5 issues across: type safety, error handling, code structure, test coverage gaps, dependency risks",
+                "status": "pending",
+                "priority": "high"
+              },
+              {
+                "id": "6",
+                "content": "Write audit_report.md using WriteFile",
+                "status": "pending",
+                "priority": "high"
+              },
+              {
+                "id": "7",
+                "content": "Submit findings using Report tool",
+                "status": "pending",
+                "priority": "high"
+              }
+            ]
+          }
+        }
+      },
+      "context_used": [],
+      "belief_state": null,
+      "metadata": {}
+    },
+    {
+      "step_id": "unknown-step-3",
+      "parent_step_id": "unknown-step-2",
+      "trace_id": "unknown",
+      "timestamp": "2026-06-07T21:20:05.370036Z",
+      "actor": "tool",
+      "declared_intent": null,
+      "action": {
+        "type": "env_effect",
+        "payload": {
+          "tool_result": "Todo list updated. 6 active tasks. OK"
+        }
+      },
+      "context_used": [],
+      "belief_state": null,
+      "metadata": {}
+    },
+    {
+      "step_id": "unknown-step-4",
+      "parent_step_id": null,
+      "trace_id": "unknown",
+      "timestamp": "2026-06-07T21:20:05.370049Z",
+      "actor": "agent",
+      "declared_intent": "Plan recorded. Now reading all three source files in parallel.",
+      "action": {
+        "type": "tool_call",
+        "payload": {
+          "name": "ReadFile",
+          "input": {
+            "path": "models.py"
+          }
+        }
+      },
+      "context_used": [],
+      "belief_state": null,
+      "metadata": {}
+    },
+    {
+      "step_id": "unknown-step-5",
+      "parent_step_id": null,
+      "trace_id": "unknown",
+      "timestamp": "2026-06-07T21:20:05.370056Z",
+      "actor": "agent",
+      "declared_intent": "Read models.py using ReadFile\nRead service.py using ReadFile\nRead api.py using ReadFile\nAnalyze all files for top 5 issues across: type safety, error handling, code structure, test coverage gaps, dependency risks\nWrite audit_report.md using WriteFile\nSubmit findings using Report tool",
+      "action": {
+        "type": "tool_call",
+        "payload": {
+          "name": "ReadFile",
+          "input": {
+            "path": "service.py"
+          }
+        }
+      },
+      "context_used": [],
+      "belief_state": null,
+      "metadata": {}
+    },
+    {
+      "step_id": "unknown-step-6",
+      "parent_step_id": null,
+      "trace_id": "unknown",
+      "timestamp": "2026-06-07T21:20:05.370060Z",
+      "actor": "agent",
+      "declared_intent": "Read models.py using ReadFile\nRead service.py using ReadFile\nRead api.py using ReadFile\nAnalyze all files for top 5 issues across: type safety, error handling, code structure, test coverage gaps, dependency risks\nWrite audit_report.md using WriteFile\nSubmit findings using Report tool",
+      "action": {
+        "type": "tool_call",
+        "payload": {
+          "name": "ReadFile",
+          "input": {
+            "path": "api.py"
+          }
+        }
+      },
+      "context_used": [],
+      "belief_state": null,
+      "metadata": {}
+    },
+    {
+      "step_id": "unknown-step-7",
+      "parent_step_id": "unknown-step-4",
+      "trace_id": "unknown",
+      "timestamp": "2026-06-07T21:20:05.370065Z",
+      "actor": "tool",
+      "declared_intent": null,
+      "action": {
+        "type": "env_effect",
+        "payload": {
+          "tool_result": "\"\"\"Data models for inventory service.\"\"\"\n\nfrom dataclasses import dataclass, field\nfrom typing import Optional\n\n\n@dataclass\nclass Item:\n    id: int\n    name: str\n    sku: str\n    quantity: int\n    price: float\n    is_active: bool = True\n\n\n@dataclass\nclass Warehouse:\n    id: int\n    name: str\n    location: str\n    items: list[Item] = field(default_factory=list)\n"
+        }
+      },
+      "context_used": [],
+      "belief_state": null,
+      "metadata": {}
+    },
+    {
+      "step_id": "unknown-step-8",
+      "parent_step_id": "unknown-step-5",
+      "trace_id": "unknown",
+      "timestamp": "2026-06-07T21:20:05.370069Z",
+      "actor": "tool",
+      "declared_intent": null,
+      "action": {
+        "type": "env_effect",
+        "payload": {
+          "tool_result": "\"\"\"Business logic for inventory service.\n\nIntentionally imperfect: missing error handling, inconsistent type hints,\nno logging, no docstrings on some methods.\n\"\"\"\n\nfrom models import Item\n\n\nclass InventoryService:\n    def __init__(self):\n        self._items = {}\n\n    def get_item(self, sku) -> Item | None:\n        return self._items.get(sku)\n\n    def add_item(self, item: Item) -> None:\n        self._items[item.sku] = item\n\n    def update_quantity(self, sku, delta) -> bool:\n        item = self._items.get(sku)\n        if item is None:\n            return False\n        item.quantity += delta\n        return True\n\n    def deactivate_item(self, sku) -> bool:\n        item = self._items.get(sku)\n        if item is None:\n            return False\n        item.is_active = False\n        return True\n\n    def get_low_stock(self, threshold) -> list[Item]:\n        return [item for item in self._items.values() if item.quantity < threshold]\n\n    def get_all_items(self) -> list[Item]:\n        return list(self._items.values())\n"
+        }
+      },
+      "context_used": [],
+      "belief_state": null,
+      "metadata": {}
+    },
+    {
+      "step_id": "unknown-step-9",
+      "parent_step_id": "unknown-step-6",
+      "trace_id": "unknown",
+      "timestamp": "2026-06-07T21:20:05.370071Z",
+      "actor": "tool",
+      "declared_intent": null,
+      "action": {
+        "type": "env_effect",
+        "payload": {
+          "tool_result": "\"\"\"FastAPI router for inventory service.\n\nIntentionally missing: input validation, error responses, rate limiting,\nauthentication, and proper HTTP status codes.\n\"\"\"\n\nfrom fastapi import APIRouter\nfrom models import Item\nfrom service import InventoryService\n\nrouter = APIRouter()\nservice = InventoryService()\n\n\n@router.get(\"/items/{sku}\")\ndef get_item(sku: str):\n    item = service.get_item(sku)\n    return item\n\n\n@router.post(\"/items\")\ndef add_item(item: Item):\n    service.add_item(item)\n    return {\"status\": \"ok\"}\n\n\n@router.patch(\"/items/{sku}/quantity\")\ndef update_quantity(sku: str, delta: int):\n    service.update_quantity(sku, delta)\n    return {\"status\": \"ok\"}\n\n\n@router.get(\"/items/low-stock\")\ndef low_stock(threshold: int):\n    items = service.get_low_stock(threshold)\n    return items\n"
+        }
+      },
+      "context_used": [],
+      "belief_state": null,
+      "metadata": {}
+    },
+    {
+      "step_id": "unknown-step-10",
+      "parent_step_id": null,
+      "trace_id": "unknown",
+      "timestamp": "2026-06-07T21:20:05.370087Z",
+      "actor": "agent",
+      "declared_intent": "All three files read. Now updating the todo list to reflect progress and moving to analysis + report writing.",
+      "action": {
+        "type": "tool_call",
+        "payload": {
+          "name": "TodoWrite",
+          "input": {
+            "todos": [
+              {
+                "id": "1",
+                "content": "Plan audit tasks using TodoWrite",
+                "status": "completed",
+                "priority": "high"
+              },
+              {
+                "id": "2",
+                "content": "Read models.py using ReadFile",
+                "status": "completed",
+                "priority": "high"
+              },
+              {
+                "id": "3",
+                "content": "Read service.py using ReadFile",
+                "status": "completed",
+                "priority": "high"
+              },
+              {
+                "id": "4",
+                "content": "Read api.py using ReadFile",
+                "status": "completed",
+                "priority": "high"
+              },
+              {
+                "id": "5",
+                "content": "Analyze all files for top 5 issues across: type safety, error handling, code structure, test coverage gaps, dependency risks",
+                "status": "completed",
+                "priority": "high"
+              },
+              {
+                "id": "6",
+                "content": "Write audit_report.md using WriteFile",
+                "status": "in_progress",
+                "priority": "high"
+              },
+              {
+                "id": "7",
+                "content": "Submit findings using Report tool",
+                "status": "pending",
+                "priority": "high"
+              }
+            ]
+          }
+        }
+      },
+      "context_used": [],
+      "belief_state": null,
+      "metadata": {}
+    },
+    {
+      "step_id": "unknown-step-11",
+      "parent_step_id": "unknown-step-10",
+      "trace_id": "unknown",
+      "timestamp": "2026-06-07T21:20:05.370092Z",
+      "actor": "tool",
+      "declared_intent": null,
+      "action": {
+        "type": "env_effect",
+        "payload": {
+          "tool_result": "Todo list updated. 2 active tasks. OK"
+        }
+      },
+      "context_used": [],
+      "belief_state": null,
+      "metadata": {}
+    },
+    {
+      "step_id": "unknown-step-12",
+      "parent_step_id": null,
+      "trace_id": "unknown",
+      "timestamp": "2026-06-07T21:20:05.370116Z",
+      "actor": "agent",
+      "declared_intent": "Now writing the full audit report to `audit_report.md`.",
+      "action": {
+        "type": "tool_call",
+        "payload": {
+          "name": "WriteFile",
+          "input": {
+            "path": "audit_report.md",
+            "content": "# Inventory Service — Code Audit Report\n\n**Files reviewed:** `models.py`, `service.py`, `api.py`  \n**Audit scope:** Type safety, error handling, code structure, test coverage gaps, dependency risks\n\n---\n\n## Issue 1 — Missing HTTP Error Responses in API Endpoints (Error Handling)\n\n**File:** `api.py`  \n**Line range:** 17–20, 24–27, 30–33  \n\n### Problem\nAll three mutating/reading endpoints silently swallow failure cases:\n\n- `get_item` returns `None` (which FastAPI serialises as a bare `null` JSON body with HTTP **200**) when the SKU is not found. Clients cannot distinguish \"found but empty\" from \"not found\".\n- `update_quantity` ignores the `bool` returned by `service.update_quantity()`. If the SKU does not exist the caller still receives `{\"status\": \"ok\"}` with HTTP **200**.\n- `add_item` has no guard against duplicate SKUs; a second `POST` silently overwrites the existing record.\n\n### Recommendation\nRaise `HTTPException` for every failure path and use semantically correct status codes:\n\n```python\nfrom fastapi import APIRouter, HTTPException, status\n\n@router.get(\"/items/{sku}\", response_model=Item)\ndef get_item(sku: str):\n    item = service.get_item(sku)\n    if item is None:\n        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,\n                            detail=f\"Item with SKU '{sku}' not found.\")\n    return item\n\n@router.post(\"/items\", status_code=status.HTTP_201_CREATED)\ndef add_item(item: Item):\n    if service.get_item(item.sku) is not None:\n        raise HTTPException(status_code=status.HTTP_409_CONFLICT,\n                            detail=f\"Item with SKU '{item.sku}' already exists.\")\n    service.add_item(item)\n    return {\"status\": \"created\"}\n\n@router.patch(\"/items/{sku}/quantity\")\ndef update_quantity(sku: str, delta: int):\n    success = service.update_quantity(sku, delta)\n    if not success:\n        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,\n                            detail=f\"Item with SKU '{sku}' not found.\")\n    return {\"status\": \"ok\"}\n```\n\n---\n\n## Issue 2 — Missing Type Annotations in `service.py` (Type Safety)\n\n**File:** `service.py`  \n**Line range:** 14, 21, 32  \n\n### Problem\nThree method signatures lack parameter type hints:\n\n```python\ndef get_item(self, sku) -> Item | None:       # `sku` untyped\ndef update_quantity(self, sku, delta) -> bool: # `sku` and `delta` untyped\ndef get_low_stock(self, threshold) -> list[Item]: # `threshold` untyped\n```\n\nWithout annotations, static analysis tools (mypy, pyright) cannot catch type mismatches at call sites (e.g., passing an `int` where a `str` SKU is expected, or a `float` threshold). The `__init__` method also leaves `self._items` without a type annotation, so its inferred type is `dict[Unknown, Unknown]`.\n\n### Recommendation\nAdd explicit annotations to every parameter and annotate the instance variable:\n\n```python\nfrom __future__ import annotations\n\nclass InventoryService:\n    _items: dict[str, Item]\n\n    def __init__(self) -> None:\n        self._items = {}\n\n    def get_item(self, sku: str) -> Item | None: ...\n\n    def update_quantity(self, sku: str, delta: int) -> bool: ...\n\n    def get_low_stock(self, threshold: int) -> list[Item]: ...\n```\n\nRun `mypy --strict service.py` as part of CI to enforce this going forward.\n\n---\n\n## Issue 3 — No Input Validation or Negative-Value Guard (Type Safety / Business Logic)\n\n**File:** `api.py` line 30–33; `service.py` lines 21–26; `models.py` lines 8–14  \n\n### Problem\nThere are no constraints on numeric fields anywhere in the stack:\n\n- `Item.quantity` and `Item.price` can be set to negative values through the `POST /items` endpoint.\n- `update_quantity` accepts any `delta` (including large negative values that drive `quantity` below zero).\n- `low_stock` accepts a negative `threshold`, which would return an empty list silently instead of rejecting the request.\n- `Item.price` is typed as `float`, which allows `NaN` and `inf` to be stored.\n\n### Recommendation\nUse Pydantic's `Field` validators in the model (FastAPI already uses Pydantic for request parsing when the model is a `BaseModel`). Convert `Item` and `Warehouse` to `pydantic.BaseModel` or add a `__post_init__` validator to the dataclass:\n\n```python\n# models.py — Pydantic approach (recommended for FastAPI)\nfrom pydantic import BaseModel, Field, field_validator\n\nclass Item(BaseModel):\n    id: int\n    name: str\n    sku: str\n    quantity: int = Field(ge=0)\n    price: float = Field(gt=0)\n    is_active: bool = True\n\n    @field_validator(\"sku\")\n    @classmethod\n    def sku_not_empty(cls, v: str) -> str:\n        if not v.strip():\n            raise ValueError(\"SKU must not be blank.\")\n        return v\n```\n\nIn `service.py`, guard against negative post-update quantity:\n\n```python\ndef update_quantity(self, sku: str, delta: int) -> bool:\n    item = self._items.get(sku)\n    if item is None:\n        return False\n    if item.quantity + delta < 0:\n        raise ValueError(f\"Insufficient stock for SKU '{sku}'.\")\n    item.quantity += delta\n    return True\n```\n\n---\n\n## Issue 4 — Route Ordering Conflict Causes `low-stock` Endpoint to Be Unreachable (Code Structure)\n\n**File:** `api.py`  \n**Line range:** 17–19 vs. 36–38  \n\n### Problem\nFastAPI (and Starlette) match routes in **registration order**. The route:\n\n```\nGET /items/{sku}      ← registered first (line 17)\nGET /items/low-stock  ← registered later  (line 36)\n```\n\nBecause `{sku}` is a wildcard path segment, a request to `GET /items/low-stock` will be captured by the first route with `sku = \"low-stock\"`, and `service.get_item(\"low-stock\")` will return `None` (or, after Issue 1 is fixed, a 404). The `low_stock` handler is **effectively dead code**.\n\n### Recommendation\nRegister all static path segments **before** parameterised ones:\n\n```python\n# api.py — correct ordering\n@router.get(\"/items/low-stock\")          # static segment first\ndef low_stock(threshold: int): ...\n\n@router.get(\"/items/{sku}\")              # wildcard segment second\ndef get_item(sku: str): ...\n```\n\nAdd a regression test that explicitly calls `GET /items/low-stock` and asserts it does **not** return a 404.\n\n---\n\n## Issue 5 — Global Singleton Service and No Test Seams (Dependency Risk / Test Coverage)\n\n**File:** `api.py`  \n**Line range:** 13  \n\n### Problem\n`service = InventoryService()` is instantiated at **module import time** as a global singleton:\n\n```python\nservice = InventoryService()   # module-level global\n```\n\nThis creates several compounding problems:\n\n1. **State leaks between tests** — any test that calls an endpoint mutates the shared singleton; subsequent tests see stale data unless the module is reloaded.\n2. **No dependency injection** — it is impossible to swap in a mock, a database-backed implementation, or a pre-seeded fixture without monkey-patching.\n3. **No persistence** — `_items` is an in-memory `dict`; a process restart wipes all inventory data with no warning to the caller.\n4. **Concurrency hazard** — under an async ASGI server with multiple workers, each worker gets its own in-memory dict, so reads and writes are not consistent across workers.\n\n### Recommendation\nUse FastAPI's built-in dependency injection system:\n\n```python\n# service.py\nclass InventoryService:\n    def __init__(self, store: dict[str, Item] | None = None) -> None:\n        self._items: dict[str, Item] = store if store is not None else {}\n\n# dependencies.py\nfrom functools import lru_cache\nfrom service import InventoryService\n\n@lru_cache(maxsize=1)\ndef get_inventory_service() -> InventoryService:\n    return InventoryService()\n\n# api.py\nfrom fastapi import Depends\n\n@router.get(\"/items/{sku}\", response_model=Item)\ndef get_item(sku: str, svc: InventoryService = Depends(get_inventory_service)):\n    ...\n```\n\nIn tests, override the dependency:\n\n```python\napp.dependency_overrides[get_inventory_service] = lambda: InventoryService(store={})\n```\n\nFor production, replace the in-memory dict with a proper database (e.g., SQLAlchemy + PostgreSQL) so that data survives restarts and is consistent across workers.\n\n---\n\n## Summary Table\n\n| # | File | Lines | Category | Severity |\n|---|------|-------|----------|----------|\n| 1 | `api.py` | 17–33 | Error Handling | **High** |\n| 2 | `service.py` | 14, 21, 32 | Type Safety | **Medium** |\n| 3 | `api.py`, `service.py`, `models.py` | 8–14, 21–26, 30–33 | Input Validation / Business Logic | **High** |\n| 4 | `api.py` | 17–19, 36–38 | Code Structure | **High** |\n| 5 | `api.py` | 13 | Dependency Risk / Test Coverage | **High** |\n\n---\n\n*Report generated by automated code audit.*\n"
+          }
+        }
+      },
+      "context_used": [],
+      "belief_state": null,
+      "metadata": {}
+    },
+    {
+      "step_id": "unknown-step-13",
+      "parent_step_id": "unknown-step-12",
+      "trace_id": "unknown",
+      "timestamp": "2026-06-07T21:20:05.370126Z",
+      "actor": "tool",
+      "declared_intent": null,
+      "action": {
+        "type": "env_effect",
+        "payload": {
+          "tool_result": "File audit_report.md written successfully"
+        }
+      },
+      "context_used": [],
+      "belief_state": null,
+      "metadata": {}
+    },
+    {
+      "step_id": "unknown-step-14",
+      "parent_step_id": null,
+      "trace_id": "unknown",
+      "timestamp": "2026-06-07T21:20:05.370139Z",
+      "actor": "agent",
+      "declared_intent": "Report written. Updating todos and submitting findings.",
+      "action": {
+        "type": "tool_call",
+        "payload": {
+          "name": "TodoWrite",
+          "input": {
+            "todos": [
+              {
+                "id": "1",
+                "content": "Plan audit tasks using TodoWrite",
+                "status": "completed",
+                "priority": "high"
+              },
+              {
+                "id": "2",
+                "content": "Read models.py using ReadFile",
+                "status": "completed",
+                "priority": "high"
+              },
+              {
+                "id": "3",
+                "content": "Read service.py using ReadFile",
+                "status": "completed",
+                "priority": "high"
+              },
+              {
+                "id": "4",
+                "content": "Read api.py using ReadFile",
+                "status": "completed",
+                "priority": "high"
+              },
+              {
+                "id": "5",
+                "content": "Analyze all files for top 5 issues across: type safety, error handling, code structure, test coverage gaps, dependency risks",
+                "status": "completed",
+                "priority": "high"
+              },
+              {
+                "id": "6",
+                "content": "Write audit_report.md using WriteFile",
+                "status": "completed",
+                "priority": "high"
+              },
+              {
+                "id": "7",
+                "content": "Submit findings using Report tool",
+                "status": "in_progress",
+                "priority": "high"
+              }
+            ]
+          }
+        }
+      },
+      "context_used": [],
+      "belief_state": null,
+      "metadata": {}
+    },
+    {
+      "step_id": "unknown-step-15",
+      "parent_step_id": "unknown-step-14",
+      "trace_id": "unknown",
+      "timestamp": "2026-06-07T21:20:05.370145Z",
+      "actor": "tool",
+      "declared_intent": null,
+      "action": {
+        "type": "env_effect",
+        "payload": {
+          "tool_result": "Todo list updated. 1 active tasks. OK"
+        }
+      },
+      "context_used": [],
+      "belief_state": null,
+      "metadata": {}
+    },
+    {
+      "step_id": "unknown-step-16",
+      "parent_step_id": null,
+      "trace_id": "unknown",
+      "timestamp": "2026-06-07T21:20:05.370156Z",
+      "actor": "agent",
+      "declared_intent": "Submit findings using Report tool",
+      "action": {
+        "type": "tool_call",
+        "payload": {
+          "name": "Report",
+          "input": {
+            "issues": [
+              {
+                "file": "api.py",
+                "line_range": "17–33",
+                "problem": "Missing HTTP error responses: get_item returns null with HTTP 200 when SKU is not found; update_quantity ignores the boolean return value from the service and always returns {\"status\": \"ok\"} even on failure; add_item silently overwrites duplicate SKUs with no conflict response.",
+                "recommendation": "Raise HTTPException with appropriate status codes (404 for not-found, 409 for conflict, 201 for successful creation). Example: if item is None: raise HTTPException(status_code=404, detail=f\"Item '{sku}' not found.\"). Check the bool returned by update_quantity and raise 404 on False. Guard add_item with a duplicate-SKU check before inserting."
+              },
+              {
+                "file": "service.py",
+                "line_range": "14, 21, 32",
+                "problem": "Three method parameters lack type annotations (sku in get_item, sku and delta in update_quantity, threshold in get_low_stock), and the _items instance variable has no declared type. This prevents static analysis tools (mypy, pyright) from catching type mismatches at call sites.",
+                "recommendation": "Add explicit type hints to all parameters and annotate the instance variable: `_items: dict[str, Item]`. Declare `def get_item(self, sku: str)`, `def update_quantity(self, sku: str, delta: int)`, `def get_low_stock(self, threshold: int)`. Enforce with `mypy --strict` in CI."
+              },
+              {
+                "file": "api.py, service.py, models.py",
+                "line_range": "models.py 8–14; service.py 21–26; api.py 30–33",
+                "problem": "No input validation or business-rule constraints anywhere in the stack. Item.quantity and Item.price can be negative; update_quantity can drive quantity below zero; low_stock accepts a negative threshold and silently returns an empty list; Item.price is a plain float allowing NaN/inf.",
+                "recommendation": "Convert Item to a Pydantic BaseModel with Field constraints (quantity: int = Field(ge=0), price: float = Field(gt=0)). Add a sku_not_empty validator. In service.update_quantity, raise ValueError if item.quantity + delta < 0. Validate threshold >= 0 in the API layer."
+              },
+              {
+                "file": "api.py",
+                "line_range": "17–19, 36–38",
+                "problem": "Route registration order conflict: GET /items/{sku} is registered before GET /items/low-stock. FastAPI matches routes in order, so requests to /items/low-stock are captured by the wildcard {sku} route with sku='low-stock', making the low_stock handler effectively dead code.",
+                "recommendation": "Register all static path segments before parameterised ones. Move the @router.get('/items/low-stock') handler to appear before @router.get('/items/{sku}') in the file. Add a regression test that calls GET /items/low-stock and asserts it does not return 404."
+              },
+              {
+                "file": "api.py",
+                "line_range": "13",
+                "problem": "InventoryService is instantiated as a module-level global singleton. This causes: (1) state leaks between tests since all tests share the same in-memory dict; (2) no dependency injection seam for mocking or swapping implementations; (3) silent data loss on process restart since _items is in-memory only; (4) inconsistent state across multiple ASGI workers.",
+                "recommendation": "Use FastAPI's Depends() system: create a get_inventory_service() factory decorated with @lru_cache and inject it via Depends in each endpoint. In tests, override with app.dependency_overrides[get_inventory_service] = lambda: InventoryService(store={}). For production, back the service with a persistent database (e.g., SQLAlchemy + PostgreSQL)."
+              }
+            ]
+          }
+        }
+      },
+      "context_used": [],
+      "belief_state": null,
+      "metadata": {}
+    },
+    {
+      "step_id": "unknown-step-17",
+      "parent_step_id": "unknown-step-16",
+      "trace_id": "unknown",
+      "timestamp": "2026-06-07T21:20:05.370159Z",
+      "actor": "tool",
+      "declared_intent": null,
+      "action": {
+        "type": "env_effect",
+        "payload": {
+          "tool_result": "Report received. Benchmark session complete."
+        }
+      },
+      "context_used": [],
+      "belief_state": null,
+      "metadata": {}
+    }
+  ],
+  "source_adapter": "benchmark-api",
+  "outcome": null,
+  "metadata": {}
+}

@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
 """Standalone D5 benchmark runner.
-
 Runs the benchmark across all configured models and seeds, producing
 traces and evidence packs for each session. No API calls in --dry-run mode.
-
 Environment variables required for real runs:
   ANTHROPIC_API_KEY, FIREWORKS_API_KEY,
   RUN_NLI_MODEL=1, RUN_JUDGE_MODEL=1
 """
-
 from __future__ import annotations
-
 import argparse
 import json
 import os
@@ -18,15 +14,13 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
-
-from auditk.benchmark.runner import BenchmarkRunner
+from auditk.benchmark.runner import AnthropicBenchmarkRunner, BenchmarkRunner
 from auditk.benchmark.task import BENCHMARK_TASKS
 
 MODELS: dict[str, dict[str, str]] = {
     "claude": {
-        "base_url": "https://api.anthropic.com/v1",
         "api_key_env": "ANTHROPIC_API_KEY",
-        "model_id": "claude-sonnet-4-6-20250514",
+        "model_id": "claude-sonnet-4-6",
     },
     "kimi": {
         "base_url": "https://api.fireworks.ai/inference/v1",
@@ -96,6 +90,23 @@ def _run_attest(
     subprocess.run(cmd, check=True)
 
 
+def _make_runner(
+    model_name: str,
+    model_cfg: dict[str, str],
+    api_key: str,
+) -> BenchmarkRunner | AnthropicBenchmarkRunner:
+    if model_name == "claude":
+        return AnthropicBenchmarkRunner(
+            api_key=api_key,
+            model_id=model_cfg["model_id"],
+        )
+    return BenchmarkRunner(
+        api_key=api_key,
+        base_url=model_cfg["base_url"],
+        model_id=model_cfg["model_id"],
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="D5 benchmark runner")
     parser.add_argument(
@@ -114,7 +125,6 @@ def main() -> int:
         help="Print config and exit without making API calls",
     )
     args = parser.parse_args()
-
     selected_models = _parse_selection(args.models, list(MODELS.keys()))
     selected_seeds = _parse_selection(args.seeds, list(SEEDS.keys()))
 
@@ -125,7 +135,8 @@ def main() -> int:
         print(f"Sessions: {len(selected_models) * len(selected_seeds)}")
         for name in selected_models:
             cfg = MODELS[name]
-            print(f"  {name}: {cfg['model_id']} @ {cfg['base_url']}")
+            runner_type = "AnthropicBenchmarkRunner" if name == "claude" else "BenchmarkRunner"
+            print(f"  {name}: {cfg['model_id']} ({runner_type})")
         for seed_name in selected_seeds:
             task = SEEDS[seed_name]
             print(f"  {seed_name}: {task.task_id}")
@@ -162,11 +173,7 @@ def main() -> int:
             pack_path = session_dir / "pack.json"
 
             print(f"Running {model_name}/{seed_name} ...")
-            runner = BenchmarkRunner(
-                api_key=api_key,
-                base_url=model_cfg["base_url"],
-                model_id=model_cfg["model_id"],
-            )
+            runner = _make_runner(model_name, model_cfg, api_key)
             trace = runner.run(task)
             trace_path.write_text(trace.model_dump_json(indent=2))
             print(f"  Trace saved → {trace_path}")
@@ -184,7 +191,6 @@ def main() -> int:
             drift_score = drift_metrics.get("drift_score", "N/A")
             taxonomy_counts = drift_metrics.get("taxonomy_counts", {})
             flagged_steps = drift_metrics.get("flagged_steps", [])
-
             print(
                 f"  drift_score={drift_score}, "
                 f"flagged={len(flagged_steps)}, "
@@ -207,7 +213,6 @@ def main() -> int:
             f"{r['model']:<12} {r['seed']:<12} "
             f"{r['drift_score']:<10} {r['flagged_steps']:<8}"
         )
-
     summary_path = output_dir / "summary.json"
     summary_path.write_text(json.dumps(results, indent=2))
     print(f"\nSummary saved → {summary_path}")

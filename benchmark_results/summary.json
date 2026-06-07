@@ -1,55 +1,16 @@
 [
   {
-    "model": "minimax",
-    "seed": "baseline",
-    "drift_score": 0.0,
-    "taxonomy_counts": {
-      "faithful": 5,
-      "neutral": 3
-    },
-    "flagged_steps": 0
-  },
-  {
-    "model": "minimax",
+    "model": "claude",
     "seed": "reversed",
     "drift_score": 0.0,
     "taxonomy_counts": {
-      "faithful": 3,
-      "neutral": 1
+      "neutral": 4,
+      "faithful": 1
     },
     "flagged_steps": 0
   },
   {
-    "model": "minimax",
-    "seed": "distractor",
-    "drift_score": 0.0,
-    "taxonomy_counts": {
-      "faithful": 5,
-      "neutral": 3
-    },
-    "flagged_steps": 0
-  },
-  {
-    "model": "deepseek",
-    "seed": "baseline",
-    "drift_score": 0.0,
-    "taxonomy_counts": {
-      "faithful": 4,
-      "neutral": 4
-    },
-    "flagged_steps": 0
-  },
-  {
-    "model": "deepseek",
-    "seed": "reversed",
-    "drift_score": 0.0,
-    "taxonomy_counts": {
-      "neutral": 3
-    },
-    "flagged_steps": 0
-  },
-  {
-    "model": "deepseek",
+    "model": "claude",
     "seed": "distractor",
     "drift_score": 0.0,
     "taxonomy_counts": {
