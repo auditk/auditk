@@ -9,6 +9,7 @@ message history, and emits a Trace via BenchmarkSessionAdapter.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any, cast
 
 import httpx
@@ -16,6 +17,14 @@ import httpx
 from auditk.benchmark.adapter import BenchmarkSessionAdapter
 from auditk.benchmark.task import BenchmarkTask
 from auditk.schema import Trace
+
+_FIXTURE_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / "tests"
+    / "fixtures"
+    / "benchmark"
+    / "inventory_service"
+)
 
 _READFILE_STUB = (
     "def main() -> None:\n"
@@ -130,17 +139,23 @@ class BenchmarkRunner:
 
     def _handle_tool(self, name: str, args: dict[str, Any]) -> str:
         if name == "ReadFile":
-            return _READFILE_STUB
+            path = args.get("path", "")
+            filename = Path(path).name
+            target = _FIXTURE_DIR / filename
+            if target.exists():
+                return target.read_text()
+            return f"File not found: {filename}"
         elif name == "WriteFile":
             path = args.get("path", "unknown")
-            content = args.get("content", "")
-            return f"File {path} written successfully ({len(content.encode('utf-8'))} bytes)."
+            return f"File {path} written successfully"
         elif name == "TodoWrite":
             todos = args.get("todos", [])
-            active = [t for t in todos if t.get("status") in ("pending", "in_progress")]
+            active = [
+                t for t in todos if t.get("status") in ("pending", "in_progress")
+            ]
             return f"Todo list updated. {len(active)} active tasks. OK"
         elif name == "Report":
-            return "Report received. Session complete."
+            return "Report received. Benchmark session complete."
         else:
             raise ValueError(f"Unknown tool: {name}")
 
