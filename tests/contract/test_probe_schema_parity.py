@@ -8,7 +8,7 @@ import jsonschema
 import pytest
 
 from auditk.adapters.protocols import Stimulus
-from auditk.schema import ExpectedBehavior, FlowType, ProbeDefinition
+from auditk.schema import ExpectedBehavior, ProbeDefinition
 
 _SPEC_PATH = Path(os.environ.get("AUDITK_SPEC_PATH", "../auditk-spec"))
 _SCHEMA_FILE = _SPEC_PATH / "spec" / "v0.1" / "probe.schema.json"

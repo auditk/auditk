@@ -5,8 +5,6 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-import pytest
-
 from auditk.schema import (
     Action,
     ActionType,
@@ -17,7 +15,6 @@ from auditk.schema import (
     Step,
     Trace,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -91,7 +88,7 @@ def test_divergence_at_third_step() -> None:
 
 
 def test_divergence_at_all_steps() -> None:
-    """Policy that changes all steps -> divergence_step is first step's id, len(diffs) == len(steps)."""
+    """Policy that changes all steps -> divergence_step is first step's id, len(diffs) == len(steps)."""  # noqa: E501
     steps = [
         _make_step("s0", "t-1", ActionType.UTTERANCE, {"text": "a"}),
         _make_step("s1", "t-1", ActionType.UTTERANCE, {"text": "b"}),

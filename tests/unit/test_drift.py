@@ -1,6 +1,6 @@
 """Unit tests for the intent–enactment drift detector (T3.2)."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from auditk.analysis.drift import compute_drift
 from auditk.schema import (
@@ -14,7 +14,7 @@ from auditk.schema import (
     Trace,
 )
 
-_TS = datetime(2024, 1, 1, tzinfo=timezone.utc)
+_TS = datetime(2024, 1, 1, tzinfo=UTC)
 
 
 def _make_trace(steps: list[Step], trace_id: str = "t-1") -> Trace:

@@ -24,8 +24,7 @@ _REGISTRY: dict[str, JaccardScorer] = {
 }
 
 _NLI_INSTALL_HINT = (
-    "The nli@0.2 scorer requires the [nli] extra. "
-    "Install with: pip install auditk[nli]"
+    "The nli@0.2 scorer requires the [nli] extra. Install with: pip install auditk[nli]"
 )
 
 
@@ -37,11 +36,9 @@ class _TransformersNLIPredictor:
 
     def predict(self, premise: str, hypothesis: str) -> tuple[float, float, float]:
         sequence = f"{premise} </s></s> {hypothesis}"
-        raw_result: Any = self._classifier(sequence)
+        raw_result: Any = self._classifier(sequence, truncation=True)
         result = cast(list[list[dict[str, Any]]], raw_result)
-        scores: dict[str, float] = {
-            str(item["label"]): float(item["score"]) for item in result[0]
-        }
+        scores: dict[str, float] = {str(item["label"]): float(item["score"]) for item in result[0]}
         return (
             scores.get("contradiction", 0.0),
             scores.get("entailment", 0.0),
@@ -49,10 +46,9 @@ class _TransformersNLIPredictor:
         )
 
 
-def _load_nli_scorer() -> "Scorer":
+def _load_nli_scorer() -> Scorer:
     """Load the nli@0.2 scorer with a real model predictor."""
     try:
-        import torch
         import transformers
     except ImportError as exc:
         raise ImportError(_NLI_INSTALL_HINT) from exc
@@ -64,20 +60,20 @@ def _load_nli_scorer() -> "Scorer":
 
     classifier = transformers.pipeline(
         "text-classification",
-        model="facebook/bart-large-mnli",
+        model="cross-encoder/nli-deberta-v3-small",
+        revision="fa2804872c3b4bd748f38c0185cc85775361e735",
         device="cpu",
         top_k=None,
+        local_files_only=True,
     )
     return NLIScorer(predictor=_TransformersNLIPredictor(classifier))
 
 
-def get_scorer(key: str = DEFAULT_SCORER) -> "Scorer":
+def get_scorer(key: str = DEFAULT_SCORER) -> Scorer:
     if key == "nli@0.2":
         return _load_nli_scorer()
     if key not in _REGISTRY:
-        raise KeyError(
-            f"Unknown scorer {key!r}. Available: {sorted(_REGISTRY)}"
-        )
+        raise KeyError(f"Unknown scorer {key!r}. Available: {sorted(_REGISTRY)}")
     return _REGISTRY[key]
 
 

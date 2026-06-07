@@ -1,6 +1,6 @@
 """Smoke tests — verify the package, CLI, and schema models load cleanly."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from typer.testing import CliRunner
@@ -54,7 +54,7 @@ def test_minimal_trace_validates() -> None:
             Step(
                 step_id="s-1",
                 trace_id="t-1",
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 actor=Actor.AGENT,
                 action=Action(type=ActionType.UTTERANCE, payload={"text": "hello"}),
             )
@@ -75,7 +75,7 @@ def test_minimal_agent_config_defaults_to_limited_risk() -> None:
 
 
 def test_minimal_evidence_pack_validates() -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     pack = EvidencePack(
         pack_id=uuid4(),
         issued_at=now,

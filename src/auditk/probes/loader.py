@@ -34,8 +34,7 @@ def _collect_files(path: Path) -> list[Path]:
     if path.is_file():
         return [path]
     return sorted(
-        f for f in path.iterdir()
-        if f.suffix in (".yaml", ".yml", ".json") and f.is_file()
+        f for f in path.iterdir() if f.suffix in (".yaml", ".yml", ".json") and f.is_file()
     )
 
 

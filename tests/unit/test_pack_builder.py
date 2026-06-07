@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -27,7 +27,7 @@ from auditk.schema import (
 _SPEC_PATH = Path(os.environ.get("AUDITK_SPEC_PATH", "../auditk-spec"))
 _PACK_SCHEMA = _SPEC_PATH / "spec" / "v0.1" / "evidence-pack.schema.json"
 
-_TS = datetime(2026, 1, 1, tzinfo=timezone.utc)
+_TS = datetime(2026, 1, 1, tzinfo=UTC)
 
 
 class FakeSigner:
@@ -37,7 +37,7 @@ class FakeSigner:
             algorithm="ed25519",
             public_key="fakepub",
             signature="fakesig",
-            issued_at=datetime.now(timezone.utc),
+            issued_at=datetime.now(UTC),
         )
 
 

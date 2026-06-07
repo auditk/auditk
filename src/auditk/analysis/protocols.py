@@ -30,5 +30,5 @@ class NLIPredictor(Protocol):
     the scorer is testable without loading model weights."""
 
     def predict(self, premise: str, hypothesis: str) -> tuple[float, float, float]:
-        """Return (p_entail, p_neutral, p_contradict), summing to ~1.0."""
+        """Return (p_contra, p_entail, p_neutral), summing to ~1.0."""
         ...

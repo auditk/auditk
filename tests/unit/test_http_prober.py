@@ -12,9 +12,7 @@ from auditk.probes.http_prober import HttpProber
 
 @respx.mock
 def test_successful_post_returns_probe_response() -> None:
-    respx.post("http://test/agent").mock(
-        return_value=httpx.Response(200, json={"text": "Hello"})
-    )
+    respx.post("http://test/agent").mock(return_value=httpx.Response(200, json={"text": "Hello"}))
     prober = HttpProber("http://test/agent")
     response = prober.send(Stimulus(channel="user_message", payload={"msg": "hi"}))
     assert response.text == "Hello"
@@ -23,9 +21,7 @@ def test_successful_post_returns_probe_response() -> None:
 
 @respx.mock
 def test_response_without_text_key_uses_raw_str() -> None:
-    respx.post("http://test/agent").mock(
-        return_value=httpx.Response(200, json={"message": "Hi"})
-    )
+    respx.post("http://test/agent").mock(return_value=httpx.Response(200, json={"message": "Hi"}))
     prober = HttpProber("http://test/agent")
     response = prober.send(Stimulus(channel="user_message", payload={"msg": "hi"}))
     assert response.text == "Hi"

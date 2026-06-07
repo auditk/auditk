@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from auditk.analysis.protocols import NLIPredictor
-from auditk.schema import DriftReport, Step, Trace
+from auditk.schema import DriftReport, Trace
 
 _METHOD = "nli"
 _METHOD_VERSION = "0.2"

@@ -12,7 +12,5 @@ _REGISTRY: dict[str, TraceAdapter] = {
 
 def get_adapter(name: str) -> TraceAdapter:
     if name not in _REGISTRY:
-        raise KeyError(
-            f"Unknown adapter {name!r}. Available: {sorted(_REGISTRY)}"
-        )
+        raise KeyError(f"Unknown adapter {name!r}. Available: {sorted(_REGISTRY)}")
     return _REGISTRY[name]

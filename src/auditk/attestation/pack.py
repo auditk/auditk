@@ -61,11 +61,7 @@ def _build_summary(traces: list[Trace], now: datetime) -> TraceSummary:
         )
     step_count = sum(len(t.steps) for t in traces)
     flow_types = list({t.flow_type for t in traces})
-    timestamps = [
-        s.timestamp
-        for t in traces
-        for s in t.steps
-    ]
+    timestamps = [s.timestamp for t in traces for s in t.steps]
     time_range = (min(timestamps), max(timestamps)) if timestamps else (now, now)
     return TraceSummary(
         trace_count=len(traces),

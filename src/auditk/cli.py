@@ -220,7 +220,7 @@ def verify(
         typer.echo(f"✗ Verification failed: public key is malformed: {exc}")
         raise typer.Exit(1) from None
 
-    manifest = pack_obj.model_dump(mode="json", exclude={"signatures"})
+    manifest = {k: v for k, v in raw_pack.items() if k != "signatures"}
     canonical = canonicalize(manifest)
 
     for sig in pack_obj.signatures:

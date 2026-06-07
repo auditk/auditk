@@ -10,12 +10,7 @@ from typer.testing import CliRunner
 
 from auditk.cli import app
 
-_FIXTURE = (
-    Path(__file__).parent.parent
-    / "fixtures"
-    / "claude_code"
-    / "session-intent-action.jsonl"
-)
+_FIXTURE = Path(__file__).parent.parent / "fixtures" / "claude_code" / "session-intent-action.jsonl"
 
 runner = CliRunner()
 
@@ -51,12 +46,18 @@ def test_key_gen_ingest_attest_verify_pipeline(tmp_path: Path) -> None:
         app,
         [
             "attest",
-            "--traces", str(trace_file),
-            "--signer", key_base,
-            "--issuer-name", "Test Issuer",
-            "--agent-id", "test-agent",
-            "--agent-version", "1.0",
-            "--out", str(pack_file),
+            "--traces",
+            str(trace_file),
+            "--signer",
+            key_base,
+            "--issuer-name",
+            "Test Issuer",
+            "--agent-id",
+            "test-agent",
+            "--agent-version",
+            "1.0",
+            "--out",
+            str(pack_file),
         ],
     )
     assert result.exit_code == 0, result.output
@@ -92,12 +93,18 @@ def test_verify_fails_on_tampered_pack(tmp_path: Path) -> None:
         app,
         [
             "attest",
-            "--traces", str(trace_file),
-            "--signer", key_base,
-            "--issuer-name", "Test Issuer",
-            "--agent-id", "test-agent",
-            "--agent-version", "1.0",
-            "--out", str(pack_file),
+            "--traces",
+            str(trace_file),
+            "--signer",
+            key_base,
+            "--issuer-name",
+            "Test Issuer",
+            "--agent-id",
+            "test-agent",
+            "--agent-version",
+            "1.0",
+            "--out",
+            str(pack_file),
         ],
     )
 
@@ -131,9 +138,19 @@ def test_verify_rejects_pack_with_no_signatures(tmp_path: Path) -> None:
     runner.invoke(
         app,
         [
-            "attest", "--traces", str(trace_file), "--signer", key_base,
-            "--issuer-name", "T", "--agent-id", "a", "--agent-version", "1",
-            "--out", str(pack_file),
+            "attest",
+            "--traces",
+            str(trace_file),
+            "--signer",
+            key_base,
+            "--issuer-name",
+            "T",
+            "--agent-id",
+            "a",
+            "--agent-version",
+            "1",
+            "--out",
+            str(pack_file),
         ],
     )
     pack_data = json.loads(pack_file.read_text())

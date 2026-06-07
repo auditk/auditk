@@ -5,13 +5,13 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-from auditk.adapters.langgraph import ingest_checkpoints
 from auditk.adapters.generic_otel import ingest_otel_spans
+from auditk.adapters.langgraph import ingest_checkpoints
 from auditk.analysis import extract_belief_state
 from auditk.schema import (
     Action,
@@ -41,7 +41,7 @@ def _make_step(
     return Step(
         step_id=step_id,
         trace_id="trace-test-001",
-        timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
         actor=Actor.AGENT,
         declared_intent=declared_intent,
         action=Action(type=ActionType.STATE_TRANSITION, payload={}),
@@ -66,11 +66,13 @@ def _make_trace(steps: list[Step]) -> Trace:
 
 class TestNoIntent:
     def test_all_declared_goal_none(self) -> None:
-        trace = _make_trace([
-            _make_step("s1"),
-            _make_step("s2"),
-            _make_step("s3"),
-        ])
+        trace = _make_trace(
+            [
+                _make_step("s1"),
+                _make_step("s2"),
+                _make_step("s3"),
+            ]
+        )
         results = extract_belief_state(trace)
         assert all(bs.declared_goal is None for bs in results)
 
@@ -222,9 +224,7 @@ class TestWithOtelFixture:
         trace = ingest_otel_spans(raw)
         results = extract_belief_state(trace)
         # retriever001 step has two context refs; find it in results
-        retriever_step_idx = next(
-            i for i, s in enumerate(trace.steps) if s.context_used
-        )
+        retriever_step_idx = next(i for i, s in enumerate(trace.steps) if s.context_used)
         assert results[retriever_step_idx].salient_facts  # non-empty
 
     def test_result_count_matches_span_count(self) -> None:

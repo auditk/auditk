@@ -60,6 +60,7 @@ def test_load_valid_probe_returns_one_result(tmp_fixture_dir: Path) -> None:
 
 def test_load_invalid_probe_is_skipped_with_warning(caplog, tmp_fixture_dir: Path) -> None:
     import logging
+
     with caplog.at_level(logging.WARNING, logger="auditk.probes.loader"):
         probes = load_probes(tmp_fixture_dir)
     assert len(probes) == 1

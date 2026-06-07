@@ -50,6 +50,7 @@ class LocalEd25519Signer:
 
     def sign(self, payload: bytes) -> Signature:
         import base64
+
         sig_bytes = self._key.sign(payload)
         return Signature(
             signer="local-ed25519",
@@ -71,5 +72,6 @@ class LocalEd25519Verifier:
     def verify(self, payload: bytes, signature_b64: str) -> None:
         """Raise cryptography.exceptions.InvalidSignature if verification fails."""
         import base64
+
         sig_bytes = base64.b64decode(signature_b64)
         self._key.verify(sig_bytes, payload)

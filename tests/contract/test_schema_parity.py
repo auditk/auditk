@@ -7,7 +7,7 @@ only auditk is checked out and the spec repo is absent.
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -34,8 +34,7 @@ _SCHEMA_DIR = _SPEC_PATH / "spec" / "v0.1"
 # Skip the entire module if the spec directory is not present.
 if not _SPEC_PATH.exists():
     pytest.skip(
-        f"auditk-spec not found at {_SPEC_PATH}; "
-        "set AUDITK_SPEC_PATH to run contract tests.",
+        f"auditk-spec not found at {_SPEC_PATH}; set AUDITK_SPEC_PATH to run contract tests.",
         allow_module_level=True,
     )
 
@@ -45,7 +44,7 @@ def _load_schema(filename: str) -> dict:  # type: ignore[type-arg]
 
 
 def _minimal_trace() -> Trace:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return Trace(
         trace_id="t-contract-1",
         flow_type=FlowType.GENERIC,
@@ -64,7 +63,7 @@ def _minimal_trace() -> Trace:
 
 
 def _minimal_evidence_pack() -> EvidencePack:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return EvidencePack(
         pack_id=uuid4(),
         issued_at=now,
@@ -83,7 +82,12 @@ def _minimal_evidence_pack() -> EvidencePack:
 _PARITY_CASES = [
     (_minimal_trace, "trace.schema.json"),
     (_minimal_evidence_pack, "evidence-pack.schema.json"),
-    (lambda: AgentConfig(config_id="cfg-1", version="0.1", flow_type=FlowType.GENERIC, system_prompt="test"), "agent-config.schema.json"),
+    (
+        lambda: AgentConfig(
+            config_id="cfg-1", version="0.1", flow_type=FlowType.GENERIC, system_prompt="test"
+        ),
+        "agent-config.schema.json",
+    ),
 ]
 
 

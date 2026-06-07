@@ -64,3 +64,26 @@ def test_compute_drift_delegates_to_default_scorer() -> None:
     via_shim = compute_drift(trace)
     via_registry = get_scorer(DEFAULT_SCORER).score(trace)
     assert via_shim == via_registry
+
+
+# --- I3: NLIPredictor docstring and index semantics ---
+
+
+def test_nli_predictor_docstring_lists_contra_entail_neutral_order() -> None:
+    """I3: The NLIPredictor.predict docstring must match the implemented
+    (p_contra, p_entail, p_neutral) order, not the inverted (p_entail, p_neutral, p_contradict)."""
+    from auditk.analysis.protocols import NLIPredictor
+
+    doc = NLIPredictor.predict.__doc__
+    assert doc is not None
+    assert "(p_contra, p_entail, p_neutral)" in doc, f"docstring says: {doc!r}"
+
+
+def test_nli_predictor_index_semantics_contract() -> None:
+    """I3: NLIPredictor implementations must return contradiction at index 0,
+    entailment at index 1, neutral at index 2."""
+    from auditk.analysis.scorers.nli import _CONTRADICTION, _ENTAILMENT, _NEUTRAL
+
+    assert _CONTRADICTION == 0
+    assert _ENTAILMENT == 1
+    assert _NEUTRAL == 2
