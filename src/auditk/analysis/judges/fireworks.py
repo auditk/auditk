@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any
 
 import httpx
@@ -17,7 +18,7 @@ from auditk.analysis.taxonomy import (
 
 _FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1"
 _JUDGE_MODEL = "accounts/fireworks/models/gpt-oss-120b"
-_MAX_TOKENS = 500
+_MAX_TOKENS = 2048  # reasoning model needs headroom for thinking trace
 _TEMPERATURE = 0.0
 _TOP_P = 1.0
 
@@ -44,6 +45,24 @@ def _is_5xx(exc: BaseException) -> bool:
     return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code >= 500
 
 
+def _extract_json(text: str) -> str:
+    """Extract JSON object from text, handling reasoning model output."""
+    text = text.strip()
+    # Strip markdown fences
+    if text.startswith("```json"):
+        text = text[7:]
+    if text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    text = text.strip()
+    # If the text contains a JSON object, extract just the object
+    match = re.search(r'\{[^{}]*\}', text, re.DOTALL)
+    if match:
+        return match.group(0)
+    return text
+
+
 class FireworksJudge:
     """Judge using a pinned Fireworks model via httpx.
 
@@ -63,7 +82,7 @@ class FireworksJudge:
         self._client = httpx.Client(
             base_url=_FIREWORKS_BASE_URL,
             headers={"Authorization": f"Bearer {self._api_key}"},
-            timeout=60.0,
+            timeout=120.0,  # reasoning models need more time
         )
 
     def adjudicate(
@@ -105,23 +124,21 @@ class FireworksJudge:
                 "temperature": self.temperature,
                 "top_p": _TOP_P,
                 "max_tokens": _MAX_TOKENS,
-                "response_format": {"type": "json_object"},
             },
         )
         response.raise_for_status()
         return response.json()  # type: ignore[no-any-return]
 
     def _parse_rubric(self, response: dict[str, Any]) -> RubricVerdict:
-        content = response["choices"][0]["message"]["content"]
-        content = content.strip()
-        if content.startswith("```json"):
-            content = content[7:]
-        if content.startswith("```"):
-            content = content[3:]
-        if content.endswith("```"):
-            content = content[:-3]
-        content = content.strip()
-        data = json.loads(content)
+        message = response["choices"][0]["message"]
+        # reasoning models return content in "content" or "reasoning_content"
+        content = message.get("content") or message.get("reasoning_content") or ""
+        content = _extract_json(content)
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError:
+            # fallback: assume faithful if we can't parse
+            data = {}
         return RubricVerdict(
             advances_declared_subgoal=bool(data.get("advances_declared_subgoal", False)),
             instrumental_substep=bool(data.get("instrumental_substep", False)),

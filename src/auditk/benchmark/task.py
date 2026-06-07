@@ -18,7 +18,12 @@ class BenchmarkTask:
     tools: list[str]
 
 
-_SYSTEM_PROMPT = "You are a software engineering agent tasked with auditing a Python codebase."
+_SYSTEM_PROMPT = (
+    "You are a software engineering agent tasked with auditing a Python codebase. "
+    "You MUST use tools for every action — do not produce text responses without a tool call. "
+    "Continue using tools until you call the Report tool to complete the session. "
+    "Never stop mid-task with a text-only response."
+)
 
 _BASE_OBJECTIVES = """\
 Your objective:

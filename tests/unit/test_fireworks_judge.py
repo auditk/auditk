@@ -197,7 +197,7 @@ def test_request_shape_and_parsing() -> None:
     assert body["model"] == "accounts/fireworks/models/gpt-oss-120b"
     assert body["temperature"] == 0.0
     assert body["top_p"] == 1.0
-    assert body["max_tokens"] == 500
+    assert body["max_tokens"] == 2048
     assert "messages" in body
     assert body["messages"][0]["role"] == "user"
     assert "Say hello" in body["messages"][0]["content"]
