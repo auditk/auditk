@@ -27,11 +27,12 @@ def build(
     issuer: Issuer,
     subject: Subject,
     signer: Signer,
+    scorer_key: str | None = None,
 ) -> EvidencePack:
     """Build and sign an EvidencePack from traces and probe results."""
     now = datetime.now(UTC)
     summary = _build_summary(traces, now)
-    drift = compute_drift(traces[0]) if traces else None
+    drift = compute_drift(traces[0], scorer_key) if traces else None
 
     pack = EvidencePack(
         pack_id=uuid4(),

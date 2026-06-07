@@ -12,11 +12,17 @@ from pathlib import Path
 import typer
 
 from auditk import __spec_version__, __version__
+from auditk.analysis.scorers import DEFAULT_SCORER, get_scorer
 
 app = typer.Typer(
     help="auditk — the open standard for agent alignment evidence.",
     no_args_is_help=True,
 )
+
+_SCORER_MAP: dict[str, str] = {
+    "jaccard": DEFAULT_SCORER,
+    "nli": "nli@0.2",
+}
 
 
 @app.command()
@@ -80,6 +86,7 @@ def attest(
     probe_results_file: str | None = typer.Option(
         None, "--probe-results", help="Path to probe results JSON."
     ),
+    scorer: str = typer.Option("jaccard", "--scorer", help="Scorer to use: jaccard or nli."),
 ) -> None:
     """Build and sign an evidence pack from traces + optional probe results."""
     from auditk.attestation.pack import build
@@ -116,6 +123,18 @@ def attest(
         [j.strip() for j in jurisdiction.split(",") if j.strip()] if jurisdiction else []
     )
 
+    if scorer not in _SCORER_MAP:
+        choices = ", ".join(sorted(_SCORER_MAP))
+        typer.echo(f"Error: Unknown scorer '{scorer}'. Choose from: {choices}")
+        raise typer.Exit(1)
+
+    scorer_key = _SCORER_MAP[scorer]
+    try:
+        get_scorer(scorer_key)
+    except ImportError as exc:
+        typer.echo(f"Error: {exc}")
+        raise typer.Exit(1) from None
+
     pack = build(
         traces=trace_list,
         probe_results=probe_results,
@@ -124,6 +143,7 @@ def attest(
         issuer=Issuer(name=issuer_name),
         subject=Subject(agent_config_ref=agent_id, agent_version=agent_version),
         signer=signer_obj,
+        scorer_key=scorer_key,
     )
     Path(out).write_text(pack.model_dump_json(indent=2))
     typer.echo(f"Evidence pack written to {out}. Pack ID: {pack.pack_id}")
