@@ -98,11 +98,15 @@ Correct primitive = **entailment + plan-decomposition coverage**, not similarity
   neutral / contradict). Pin `method + method_version` into the signed pack.
   **Results:** Jaccard post-D1: 0.926 drift, 40/42 flagged (false positive cascade).
   NLI post-D2: 0.262 drift, 11/42 flagged (**72% FP reduction**).
-- **D3 — Plan-decomposition + two-stage judge.** Behind the protocol:
+- [x] **D3 — Plan-decomposition + two-stage judge.** Behind the protocol:
   `llm-judge@0.3`, boolean rubric, judge pinned. Deterministic NLI gates; judge
   adjudicates only the candidates NLI flags. Emit drift taxonomy (faithful /
   benign-elaboration / goal-deviation / instruction-noncompliance /
   undeclared-goal), aligned to TRAIL + the spec-v0.2 taxonomy refs.
+  **Results:** drift_score: **0.167** (7/42 `goal_deviation`), faithful: 32, neutral: 3.
+  Judge overturned 4 NLI false positives (gate contradictions rescued to faithful).
+  Full scorer fingerprint (nli model+revision + judge model+temperature) attested
+  in the signed pack.
 - **D4 — Calibration harness.** 200–500 human-labelled (plan, action, label)
   pairs; compute scorer-vs-human Pearson r (target > 0.7) and Cohen's κ on the
   boolean flag; emit calibration stats into the signed pack. Gate before any
@@ -120,6 +124,6 @@ deferred until after **D2**. Scorer correctness precedes engine breadth.
 
 POC working: Claude Code session → signed evidence pack → verify, with NLI drift
 scoring live. T4.9 (publish a real-session evidence pack under `demos/`) remains
-independent and unblocked. **D2 complete.** The next concrete *engine* milestone
-is **D3** (two-stage judge: deterministic NLI gates + LLM judge adjudicates
-flagged candidates; plan-decomposition + taxonomy).
+independent and unblocked. **D3 complete.** The next concrete *engine* milestone
+is **D4** (calibration harness: 200–500 human-labelled pairs, scorer-vs-human
+Pearson r / Cohen's κ, gate before cross-model numbers are published).
