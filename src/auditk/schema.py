@@ -14,6 +14,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from auditk.analysis.taxonomy import TaxonomyLabel
+
 if TYPE_CHECKING:
     from auditk.adapters.protocols import Stimulus
 
@@ -181,6 +183,26 @@ class ProbeResult(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class StepDrift(BaseModel):
+    """Per-step drift classification with optional judge adjudication."""
+
+    step_id: str
+    label: TaxonomyLabel
+    overturned_gate: bool = False
+    reasoning: str
+
+
+class ScorerFingerprint(BaseModel):
+    """Reproducibility tuple for the scorer that produced a DriftReport."""
+
+    method: str
+    method_version: str
+    nli_model: str | None = None
+    nli_revision: str | None = None
+    judge_model: str | None = None
+    judge_temperature: float | None = None
+
+
 class DriftReport(BaseModel):
     """Aggregate intent-enactment drift signal for a set of traces."""
 
@@ -189,6 +211,10 @@ class DriftReport(BaseModel):
     flagged_steps: list[str] = Field(default_factory=list)
     method: str
     method_version: str
+    # --- D3 additive-optional ---
+    per_step: dict[str, StepDrift] | None = None
+    scorer_fingerprint: ScorerFingerprint | None = None
+    taxonomy_counts: dict[str, int] | None = None
 
 
 class CounterfactualResult(BaseModel):

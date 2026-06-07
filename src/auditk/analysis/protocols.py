@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+from auditk.analysis.taxonomy import RubricResult
 from auditk.schema import DriftReport, Trace
 
 
@@ -31,4 +32,26 @@ class NLIPredictor(Protocol):
 
     def predict(self, premise: str, hypothesis: str) -> tuple[float, float, float]:
         """Return (p_contra, p_entail, p_neutral), summing to ~1.0."""
+        ...
+
+
+@runtime_checkable
+class Judge(Protocol):
+    """Adjudicate a single step that has been flagged by the NLI gate.
+
+    A judge must be deterministic (temperature=0.0) and disclose its identity
+    so that scorer fingerprints can be pinned into the signed evidence pack.
+    """
+
+    model_id: str
+    temperature: float
+
+    def adjudicate(
+        self,
+        step_id: str,
+        declared_intent: str,
+        action_text: str,
+        gate_label: str,
+    ) -> RubricResult:
+        """Return a structured rubric result for the given step."""
         ...
