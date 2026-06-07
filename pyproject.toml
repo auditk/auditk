@@ -56,6 +56,10 @@ otel = [
     "opentelemetry-sdk>=1.25",
 ]
 pdf = ["weasyprint>=62.0"]
+nli = [
+    "torch>=2.0",
+    "transformers>=4.30",
+]
 
 [project.urls]
 Homepage = "https://github.com/haikomatt/auditk"
