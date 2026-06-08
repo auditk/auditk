@@ -1,3 +1,5 @@
+"""Adapter registry — maps adapter names to TraceAdapter instances."""
+
 from auditk.adapters.claude_code import ClaudeCodeTraceAdapter
 from auditk.adapters.generic_otel import OtelTraceAdapter
 from auditk.adapters.langgraph import LangGraphTraceAdapter

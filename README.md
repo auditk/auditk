@@ -18,13 +18,31 @@ What is working today:
 - Trace adapters: Claude Code session JSONL, OpenTelemetry/OpenInference, LangGraph checkpoints
 - Analysis engine: `compute_drift` (intent–enactment drift), belief-state extraction, counterfactual replay
 - Attestation: Ed25519 signing, canonical JSON, evidence-pack builder
-- CLI: `key-gen`, `ingest`, `attest`, `verify` (probe/replay/diff are Phase 4b stubs)
-- 99 tests; `mypy --strict` clean
+- CLI: `key-gen`, `ingest`, `attest`, `verify` fully implemented; `replay` and `diff` are Phase 4b stubs (they print a `[stub]` message and exit)
+- 259 tests; `mypy --strict` clean
 
 What comes next:
 - Probe path (Phase 4b): `run_suite`, jailbreak probe family against the testbed
 - More adapters (Phase C): OpenClaw, Hermes
 - More testing against agent traces
+
+## Install
+
+Requires Python 3.11+.
+
+```bash
+git clone https://github.com/haikomatt/auditk
+cd auditk
+pip install -e .
+```
+
+For the NLI scorer (`--scorer nli`, the default):
+
+```bash
+pip install -e ".[nli]"   # pulls torch + transformers
+```
+
+Other optional extras: `langgraph`, `otel`, `browser`, `pdf`.
 
 ## The pipeline
 

@@ -88,7 +88,12 @@ def attest(
         None, "--probe-results", help="Path to probe results JSON."
     ),
     scorer: str = typer.Option(
-        "jaccard", "--scorer", help="Scorer to use: jaccard, nli, or llm-judge."
+        "nli",
+        "--scorer",
+        help=(
+            "Scorer to use: nli (default; requires [nli] extra), "
+            "llm-judge, or jaccard (deprecated lexical baseline)."
+        ),
     ),
     verbose: bool = typer.Option(
         False, "--verbose", help="Print each step's taxonomy label and reasoning as it's scored."
