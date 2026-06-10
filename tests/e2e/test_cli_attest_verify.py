@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import shutil
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from auditk.cli import app
+
+_nli_available = (
+    importlib.util.find_spec("torch") is not None
+    and importlib.util.find_spec("transformers") is not None
+)
+pytestmark = pytest.mark.skipif(
+    not _nli_available,
+    reason="[nli] extra not installed; run 'pip install auditk[nli]'",
+)
 
 _FIXTURE = Path(__file__).parent.parent / "fixtures" / "claude_code" / "session-intent-action.jsonl"
 

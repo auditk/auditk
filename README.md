@@ -26,7 +26,7 @@ The core pipeline runs end-to-end: an agent session becomes a signed, verifiable
 - CLI: `key-gen`, `ingest`, `attest`, `verify`
 - Cross-model benchmark: 4 models, calibrated and directly comparable
 - Session provenance hooks for Claude Code and Hermes
-- 1,356 tests; `mypy --strict` clean
+- 262 tests; `mypy --strict` clean
 
 **Worked examples:** `demos/demo-001/` and `demos/demo-005/` — real agent sessions with published evidence packs and drift scores.
 

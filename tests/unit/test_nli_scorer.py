@@ -1,10 +1,20 @@
 """Unit and integration tests for the NLIScorer (nli@0.2)."""
 
 import os
+import importlib.util
 from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+
+_has_nli = (
+    importlib.util.find_spec("torch") is not None
+    and importlib.util.find_spec("transformers") is not None
+)
+pytestmark = pytest.mark.skipif(
+    not _has_nli,
+    reason="requires [nli] extra: pip install auditk[nli]",
+)
 
 from auditk.analysis.protocols import Scorer
 from auditk.analysis.scorers import get_scorer

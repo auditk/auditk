@@ -63,9 +63,9 @@ nli = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/haikomatt/auditk"
-Spec = "https://github.com/haikomatt/auditk-spec"
-Issues = "https://github.com/haikomatt/auditk/issues"
+Homepage = "https://github.com/auditk/auditk"
+Spec = "https://github.com/auditk/auditk-spec"
+Issues = "https://github.com/auditk/auditk/issues"
 
 [project.scripts]
 auditk = "auditk.cli:app"
