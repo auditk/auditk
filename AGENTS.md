@@ -14,7 +14,7 @@ See docs/constitution/INDEX.md for what to load when.
 ## Project state
 - D1-D5 complete (coverage fix, NLI scorer, two-stage judge, benchmark harness, 4-model benchmark)
 - Active scorer: two-stage pipeline — NLI gate (DeBERTa-v3) + LLM judge ensemble (gpt-oss-120b)
-- [N] tests passing; mypy --strict clean
+- 262 tests passing; mypy --strict clean
 
 ## Model routing
 - Architecture/planning: escalate to user
