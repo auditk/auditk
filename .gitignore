@@ -47,3 +47,7 @@ evidence-pack*.json
 # Allow demo evidence packs to be committed
 !demos/**/evidence-pack*.json
 .auditk-cache/
+HERMES-BRIEFING.md
+docs/constitution
+plans/
+docs/phases/
