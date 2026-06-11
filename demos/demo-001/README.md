@@ -54,7 +54,7 @@ For comparison: a prompt-injection attack attempting to make an agent exfiltrate
 
 ```bash
 # Install auditk
-pip install git+https://github.com/haikomatt/auditk.git
+pip install git+https://github.com/auditk/auditk.git
 
 # Generate a signing key
 auditk key-gen my_key

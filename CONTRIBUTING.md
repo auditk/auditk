@@ -11,7 +11,7 @@ Thank you for considering a contribution. This is an Apache-2.0 open-source proj
 ## Development setup
 
 ```bash
-git clone https://github.com/haikomatt/auditk
+git clone https://github.com/auditk/auditk
 cd auditk
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"

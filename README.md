@@ -2,13 +2,25 @@
 
 > Python reference implementation of [auditk-spec](https://github.com/auditk/auditk-spec) — the open standard for cryptographically attested intent–enactment drift measurement in agentic AI systems.
 
-## What this is
+## What this measures
 
-Coding agents have shell access, edit your files, and push to your repos. Observability platforms tell you what an agent *did*. auditk tells you whether the agent *did what it declared it would do* — and produces a signed, tamper-evident record you can hand to a security team, attach to a compliance record, or verify offline.
+AI agents operating in consequential contexts — financial advice, clinical triage, investment suitability — must not only produce correct outputs but do what they declared they would do. Under FCA Consumer Duty, MiFID II, GDPR Article 22, and NHS clinical governance, the gap between declared and enacted process is a **compliance failure**, not a quality issue. Current AI explainability approaches reconstruct a narrative post-hoc; auditk produces a **contemporaneous, tamper-evident record** at the time of execution.
 
-The core problem auditk addresses is **intent–enactment drift**: the gap between an agent's declared plan and its actual behaviour. This matters for coding agents today. It matters more for agents making consequential decisions in regulated environments — financial advice, clinical triage, insurance assessment — where the gap between declared and enacted process is a compliance failure, not just a quality issue.
+The core problem is **intent–enactment drift**: the gap between an agent's declared plan and its actual behaviour at each step. Observability platforms tell you what an agent *did*. auditk tells you whether the agent *did what it declared it would do* — and produces a signed evidence pack you can hand to a regulator, attach to a compliance record, or verify offline.
+
+auditk is validated in the coding agent domain (Claude Code with `TodoWrite` standing plans as the intent declaration mechanism) as a proof of concept for the general framework. Regulated industry deployment — voice pipelines, financial services agents, clinical AI — is the target.
 
 auditk is Apache-2.0, protocol-first, and integrates with whatever you are already using: LangSmith, Langfuse, Phoenix, raw OpenTelemetry, or nothing at all.
+
+## Research
+
+**Paper:** *auditk: an open standard for cryptographically attested intent–enactment drift measurement in agentic AI systems* — arXiv preprint forthcoming; NeurIPS/ICML/ACL safety workshop target.
+
+Key empirical findings:
+- Drift range 0.016–0.210 across Claude Code sessions; all five taxonomy categories firing in production
+- Cross-model benchmark (4 model families — Claude, Kimi K2, MiniMax M2, DeepSeek) on identical sessions with reversed and distractor seeds: Kimi K2 is the only model to drift on the distractor
+- Cross-taxonomy comparison with TRAIL (31 SWE-bench traces): NLI gate achieves 0.60 recall on TRAIL errors plus 163 additional steps not captured by TRAIL — instruments empirically measure distinct constructs
+- Attestation integrity: 100 tampered evidence packs → 100% rejection
 
 ## Status
 
@@ -25,6 +37,7 @@ The core pipeline runs end-to-end: an agent session becomes a signed, verifiable
 - Attestation: Ed25519 signing, canonical JSON, portable evidence pack
 - CLI: `key-gen`, `ingest`, `attest`, `verify`
 - Cross-model benchmark: 4 models, calibrated and directly comparable
+- Cross-taxonomy comparison with TRAIL dataset: 0.60 recall on TRAIL errors + 163 additional steps
 - Session provenance hooks for Claude Code and Hermes
 - 262 tests; `mypy --strict` clean
 
@@ -32,10 +45,12 @@ The core pipeline runs end-to-end: an agent session becomes a signed, verifiable
 
 **Coming next:**
 
-- Probe path: `run_suite`, jailbreak probe family against the testbed
-- Additional adapters: OpenClaw, browser agents
+- Causal masking in judge: evaluate each step with only the history available to the agent at that point
+- Contingent responsiveness metric: detect drift when the agent encounters unexpected resistance
 - Voice pipeline validation
-- Calibration against human-labelled gold standard
+- Calibration against human-labelled gold standard (Kaggle)
+- Regulated industry pilot (financial services / clinical AI)
+- Additional adapters: browser agents
 
 ## The pipeline
 
@@ -85,6 +100,14 @@ pip install "auditk[langgraph]"
 ```
 
 Requires Python ≥ 3.11.
+
+## Ecosystem
+
+| Repo | Role |
+|------|------|
+| [`auditk`](https://github.com/auditk/auditk) | Python reference implementation (this repo) |
+| [`auditk-spec`](https://github.com/auditk/auditk-spec) | Language-agnostic protocol: trace, evidence-pack, probe, and agent-config schemas |
+| [`auditk-testbed`](https://github.com/auditk/auditk-testbed) | Reference agents (aligned + vulnerable) for probe and pipeline validation |
 
 ## Contributing
 
