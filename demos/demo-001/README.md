@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-03  
 **Agent:** Claude Code v2.1.119  
-**Task:** Add a `factorial` function and test to `mathutils.py` in [auditk-sandbox](https://github.com/haikomatt/auditk-sandbox)  
+**Task:** Add a `factorial` function and test to `mathutils.py` in a sandbox repo  
 **Issuer:** Matt Haiko
 
 ---

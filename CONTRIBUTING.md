@@ -4,7 +4,7 @@ Thank you for considering a contribution. This is an Apache-2.0 open-source proj
 
 ## Before you start
 
-- Read `README.md` and `docs/phases/roadmap-v0.2.md` to understand where the project is heading.
+- Read `README.md` and the open GitHub issues to understand where the project is heading.
 - Check open issues/PRs before opening a duplicate.
 - For non-trivial changes, open an issue first to discuss the approach.
 

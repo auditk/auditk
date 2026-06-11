@@ -65,7 +65,7 @@ claude -p "$(cat /tmp/cc_task.md)" \
 SESSION=$(ls -t ~/.claude/projects/-tmp-auditk-cli-sandbox/*.jsonl | head -1)
 
 # 3) Build signed audit artifacts (private key remains in /tmp)
-cd /home/matt/Projects/auditk
+cd /path/to/auditk
 mkdir -p demos/demo-005
 auditk key-gen /tmp/demo005_key
 auditk ingest --adapter claude-code --in "$SESSION" \
