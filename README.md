@@ -108,6 +108,7 @@ Requires Python ≥ 3.11.
 | [`auditk`](https://github.com/auditk/auditk) | Python reference implementation (this repo) |
 | [`auditk-spec`](https://github.com/auditk/auditk-spec) | Language-agnostic protocol: trace, evidence-pack, probe, and agent-config schemas |
 | [`auditk-testbed`](https://github.com/auditk/auditk-testbed) | Reference agents (aligned + vulnerable) for probe and pipeline validation |
+| [`auditk-trail-comparison`](https://github.com/auditk/auditk-trail-comparison) | Reproducibility code and data for the TRAIL cross-taxonomy comparison (paper §4.3) |
 
 ## Contributing
 
