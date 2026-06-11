@@ -59,11 +59,12 @@ class JaccardScorer:
             else:
                 label = TaxonomyLabel.FAITHFUL
 
+            op = "<" if s_i < _FLAG_THRESHOLD else ">="
             per_step[step.step_id] = StepDrift(
                 step_id=step.step_id,
                 label=label,
                 overturned_gate=False,
-                reasoning=f"Jaccard similarity {s_i:.3f} {'<' if s_i < _FLAG_THRESHOLD else '>='} threshold {_FLAG_THRESHOLD}",
+                reasoning=f"Jaccard similarity {s_i:.3f} {op} threshold {_FLAG_THRESHOLD}",
             )
 
         drift_score = 0.0 if not scores else 1.0 - mean(scores)

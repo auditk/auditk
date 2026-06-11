@@ -5,6 +5,7 @@ Drives a model through a benchmark task using httpx, captures the full
 message history, and emits a Trace via BenchmarkSessionAdapter.
 """
 from __future__ import annotations
+
 import json
 from pathlib import Path
 from typing import Any, cast
