@@ -46,6 +46,8 @@ evidence-packs/
 evidence-pack*.json
 # Allow demo evidence packs to be committed
 !demos/**/evidence-pack*.json
+# Allow demo signing public keys (never commit private keys)
+!demos/**/*.ed25519.pub
 .auditk-cache/
 HERMES-BRIEFING.md
 docs/constitution

@@ -19,6 +19,10 @@ CORRELATE_SCRIPT = Path(__file__).parents[2] / "scripts" / "correlate_sessions.p
 PROVENANCE_FILE = Path.home() / ".agent_provenance.jsonl"
 
 
+@pytest.mark.skipif(
+    not CLAUDE_HOOK.exists(),
+    reason="Claude hooks not installed on this machine",
+)
 class TestClaudeHook:
     """Tests for ~/.claude/hooks/post-session.sh."""
 
@@ -92,6 +96,10 @@ class TestClaudeHook:
             assert "timestamp" in entry
 
 
+@pytest.mark.skipif(
+    not HERMES_HOOK.exists(),
+    reason="Hermes hooks not installed on this machine",
+)
 class TestHermesHook:
     """Tests for ~/.hermes/hooks/post-session.sh."""
 
