@@ -1,9 +1,5 @@
 # auditk — Agent Instructions
 
-## Constitution
-Before coding, read relevant sections from docs/constitution/.
-See docs/constitution/INDEX.md for what to load when.
-
 ## Hard rules
 - Never delete files without explicit confirmation
 - Never run migrations without explicit confirmation
@@ -12,9 +8,12 @@ See docs/constitution/INDEX.md for what to load when.
 - Do not touch plans/, docs/phases/ — gitignored internal documents
 
 ## Project state
-- D1-D5 complete (coverage fix, NLI scorer, two-stage judge, benchmark harness, 4-model benchmark)
-- Active scorer: two-stage pipeline — NLI gate (DeBERTa-v3) + LLM judge ensemble (gpt-oss-120b)
+- Active scorer: two-stage pipeline — NLI gate (DeBERTa-v3 asymmetric entailment) + LLM judge ensemble
+- Judge is pluggable via the `Judge` protocol (src/auditk/analysis/protocols.py);
+  default implementation uses Fireworks AI (set FIREWORKS_API_KEY); bring your own by
+  implementing the protocol against any API
 - 262 tests passing; mypy --strict clean
+- See README.md for the full feature set and roadmap
 
 ## Model routing
 - Architecture/planning: escalate to user
