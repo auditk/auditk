@@ -142,7 +142,12 @@ class BenchmarkToolHarness:
 
 
 class BenchmarkRunner(BenchmarkToolHarness):
-    """Drive a model through a benchmark task via an OpenAI-compatible endpoint."""
+    """Drive a model through a benchmark task via an OpenAI-compatible endpoint.
+
+    # TODO(future): enforce family exclusion programmatically — reject judge
+    # configurations where the judge model family matches the agent model family.
+    # Currently enforced by manual judge selection only (see README.md §Judge independence).
+    """
 
     def __init__(
         self,

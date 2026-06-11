@@ -73,6 +73,14 @@ auditk attest --traces trace.json \
 auditk verify evidence-pack.json --public-key signing_key.ed25519.pub
 ```
 
+## Scope and limitations
+
+auditk detects **specification drift** — the gap between declared and revealed intent — not deception. A sufficiently sophisticated agent pursuing a hidden goal will produce plausible intent declarations that pass both the NLI gate and the judge ensemble. This is a known limitation, not a defect in the instrument: if an agent's beliefs are correct and its declarations are honest, the measurement is reliable. The caveat is that auditk cannot distinguish a well-aligned agent from a deceptive one whose declarations are designed to pass. Interpretability integration — grounding intent declarations in internal model states rather than agent-produced text — is the path toward closing this gap.
+
+## Judge independence
+
+The two-stage scoring pipeline uses a judge ensemble selected to be independent of the agent being audited. In the current cross-model benchmark, the primary judge (GPT OSS 120B, served via Fireworks AI) is from a different model family than all four benchmarked agents (Claude, Kimi K2, MiniMax M2, DeepSeek). This family exclusion is currently enforced by manual judge selection, not by a programmatic check in the pipeline. A future version should enforce it automatically; see the TODO in `src/auditk/benchmark/runner.py`.
+
 ## What this is not
 
 - Not a hosted SaaS. auditk is a local tool and open standard — it ingests from LangSmith, Langfuse, Phoenix, and raw OTel rather than replacing them.
@@ -85,7 +93,7 @@ See [auditk-spec](https://github.com/auditk/auditk-spec) for the protocol. Key p
 
 - **Pure-functional core.** Analysis takes traces + config + probe spec, returns findings. No global state, no I/O.
 - **Adapter pattern at every boundary.** Trace ingestion, config loading, signing, evidence storage — all pluggable Python protocols.
-- **Segmented attestation.** Human-agent entanglement is preserved with provenance labelling — attested agent segments are signed independently, human turns are marked as unattested.
+- **Actor-level provenance labelling.** Each step in the trace carries an `Actor` label (`agent` / `user` / `tool` / `environment`), preserving the full human-agent interaction record. Segment-level attestation — signing agent-produced segments independently while marking human turns as unattested — is a planned future property.
 
 ## Installation
 
