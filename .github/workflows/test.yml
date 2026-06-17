@@ -19,6 +19,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Check out auditk-spec
+        uses: actions/checkout@v6
+        with:
+          repository: auditk/auditk-spec
+          path: auditk-spec
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
@@ -37,4 +43,4 @@ jobs:
       - name: Test (pytest)
         run: pytest -q
         env:
-          AUDITK_SPEC_PATH: ../auditk-spec
+          AUDITK_SPEC_PATH: auditk-spec
