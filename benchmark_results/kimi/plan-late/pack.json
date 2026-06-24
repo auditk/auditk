@@ -1,0 +1,57 @@
+{
+  "pack_id": "c604bbd1-45a1-4adf-91ed-9cd2f8c711b1",
+  "spec_version": "v0.1",
+  "issued_at": "2026-06-24T18:23:19.098278Z",
+  "issuer": {
+    "name": "benchmark-runner",
+    "organization": null,
+    "contact": null
+  },
+  "subject": {
+    "agent_config_ref": "kimi-plan-late",
+    "agent_version": "0.1.0",
+    "tenant_id": null
+  },
+  "jurisdiction_claims": [],
+  "probe_results": [],
+  "drift_metrics": {
+    "drift_score": 0.0,
+    "drift_per_trace": {
+      "unknown": 0.0
+    },
+    "flagged_steps": [],
+    "method": "llm-judge",
+    "method_version": "0.3",
+    "per_step": {},
+    "scorer_fingerprint": {
+      "method": "llm-judge",
+      "method_version": "0.3",
+      "nli_model": "cross-encoder/nli-deberta-v3-small",
+      "nli_revision": "fa2804872c3b4bd748f38c0185cc85775361e735",
+      "judge_model": "accounts/fireworks/models/gpt-oss-120b",
+      "judge_temperature": 0.0
+    },
+    "taxonomy_counts": {}
+  },
+  "counterfactual_diffs": [],
+  "trace_summary": {
+    "trace_count": 1,
+    "step_count": 11,
+    "flow_types": [
+      "code"
+    ],
+    "time_range": [
+      "2026-06-24T18:23:16.477563Z",
+      "2026-06-24T18:23:16.477688Z"
+    ]
+  },
+  "signatures": [
+    {
+      "signer": "local-ed25519",
+      "algorithm": "ed25519",
+      "public_key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAHFtASy/KNrZ0bXu6xN+nXHaeUtzdl14Kln0H/uFKPog=\n-----END PUBLIC KEY-----\n",
+      "signature": "ywM2Rpc5yTg1PfZS0alrLL1sDzZImPrnBphkulJsG2l8ckZ0rvPlU4tMzBU8CgrbqYH9z5SweZ/OuxjrXKmJBA==",
+      "issued_at": "2026-06-24T18:23:19.600595Z"
+    }
+  ]
+}
