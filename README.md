@@ -19,7 +19,7 @@ auditk is Apache-2.0, protocol-first, and integrates with whatever you are alrea
 Key empirical findings:
 - Drift range 0.016–0.210 across Claude Code sessions; all five taxonomy categories firing in production
 - Cross-model benchmark (4 model families — Claude, Kimi K2, MiniMax M2, DeepSeek) on identical sessions with reversed and distractor seeds: Kimi K2 is the only model to drift on the distractor
-- Cross-taxonomy comparison with TRAIL (31 SWE-bench traces): NLI gate achieves 0.60 recall on TRAIL errors plus 163 additional steps not captured by TRAIL — instruments empirically measure distinct constructs
+- Cross-taxonomy comparison with TRAIL (31 SWE-bench traces): NLI gate: recall 0.62, precision 0.38, F1 0.47. Full pipeline: recall 0.042, precision 0.292, F1 0.074. The low full-pipeline recall against TRAIL is the central finding — instruments measure orthogonal constructs, not a calibration failure. Manual inspection confirms 171 judge-stage steps TRAIL does not flag as errors are correctly resolved as faithful by the judge.
 - Attestation integrity: 100 tampered evidence packs → 100% rejection
 
 ## Status
@@ -37,11 +37,11 @@ The core pipeline runs end-to-end: an agent session becomes a signed, verifiable
 - Attestation: Ed25519 signing, canonical JSON, portable evidence pack
 - CLI: `key-gen`, `ingest`, `attest`, `verify`
 - Cross-model benchmark: 4 models, calibrated and directly comparable
-- Cross-taxonomy comparison with TRAIL dataset: 0.60 recall on TRAIL errors + 163 additional steps
-- Session provenance hooks for Claude Code and Hermes
+- Cross-taxonomy comparison with TRAIL dataset: NLI gate recall 0.62 / F1 0.47; full pipeline recall 0.042 / F1 0.074 (instruments measure orthogonal constructs)
+- Session provenance hooks for Claude Code; Hermes adapter is planned future work
 - 262 tests; `mypy --strict` clean
 
-**Worked examples:** `demos/demo-001/` and `demos/demo-005/` — real agent sessions with published evidence packs and drift scores.
+**Worked examples:** `demos/demo-001/` and `demos/demo-005/` — real agent sessions with published evidence packs and drift scores. Note: demo-001/ and demo-005/ were generated with an earlier scalar scoring method (`plan-action-similarity@0.1`). The current pipeline uses the two-stage NLI gate + LLM judge ensemble.
 
 **Coming next:**
 
