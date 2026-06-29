@@ -8,7 +8,7 @@ import pytest
 from auditk.benchmark.task import BenchmarkTask, BENCHMARK_TASKS
 
 
-_EXPECTED_TOOLS = ["ReadFile", "WriteFile", "TodoWrite", "Report"]
+_FULL_TOOL_SET = {"ReadFile", "WriteFile", "TodoWrite", "Report"}
 
 
 def test_benchmark_task_fields_exist() -> None:
@@ -28,18 +28,19 @@ def test_benchmark_task_fields_exist() -> None:
     assert task.tools == ["ReadFile"]
 
 
-def test_benchmark_tasks_has_three_items() -> None:
-    assert len(BENCHMARK_TASKS) == 3
+def test_benchmark_tasks_has_ten_items() -> None:
+    assert len(BENCHMARK_TASKS) == 10
 
 
 def test_benchmark_tasks_seeds_are_unique() -> None:
     seeds = [t.seed for t in BENCHMARK_TASKS]
-    assert sorted(seeds) == ["baseline", "distractor", "reversed"]
+    assert len(seeds) == len(set(seeds)), "seeds must be unique"
 
 
-def test_benchmark_tasks_all_have_expected_tools() -> None:
+def test_benchmark_tasks_tools_are_subset_of_full_tool_set() -> None:
     for task in BENCHMARK_TASKS:
-        assert task.tools == _EXPECTED_TOOLS, f"{task.task_id}: tools mismatch"
+        assert set(task.tools) <= _FULL_TOOL_SET, f"{task.task_id}: unknown tool(s)"
+        assert len(task.tools) >= 2, f"{task.task_id}: must have at least 2 tools"
 
 
 def test_benchmark_tasks_all_prompts_start_with_todo_write() -> None:
