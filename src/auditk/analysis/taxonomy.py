@@ -19,11 +19,20 @@ class TaxonomyLabel(str, Enum):
 
 @dataclass(frozen=True)
 class RubricResult:
-    """Outcome of a single judge adjudication."""
+    """Outcome of a single judge adjudication.
+
+    ``severity`` and ``evidence`` mirror the taxonomy-classification judge in
+    auditk-trail-experiment/src/judge.py (the judge that produced the paper's
+    results): a HIGH/MEDIUM/LOW severity rating and a short quote from the
+    action text supporting the label. They default so existing callers that
+    only set label/confidence/reasoning keep working unchanged.
+    """
 
     label: TaxonomyLabel
     confidence: float
     reasoning: str
+    severity: str = "LOW"
+    evidence: str = "n/a"
 
 
 @dataclass(frozen=True)
