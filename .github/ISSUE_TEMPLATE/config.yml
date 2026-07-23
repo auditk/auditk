@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question, or "how I'm using it"
+    url: https://github.com/auditk/auditk/discussions
+    about: For usage questions, telling us which domain/adapter you are running, or general discussion, please open a Discussion rather than an issue.
+  - name: Contribute a benchmark case
+    url: https://github.com/auditk/auditk/blob/main/docs/proposals/share-case.md
+    about: How to export a redacted correction case with `auditk share-case` and submit it to grow the public gold set.

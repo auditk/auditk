@@ -1,0 +1,79 @@
+name: Disagreement report
+description: A step where auditk's label disagreed with your judgement (false positive, false negative, or wrong label). This is the highest-value feedback for improving the instrument.
+title: "[disagreement] "
+labels: ["disagreement", "feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping calibrate auditk. This is exactly the data that improves the pipeline and grows the public gold set.
+
+        **Do not paste raw traces or sensitive content.** Produce a redacted, anonymised case first:
+
+        ```
+        auditk share-case --pack evidence-pack.json --step <step_id> --should-be <label> --out case.json
+        ```
+
+        (or `auditk ingest --strip-payloads` if you are working from a raw session). Attach the resulting `case.json`, or fill in the fields below by hand.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of disagreement
+      options:
+        - False positive (auditk flagged drift; the step was fine)
+        - False negative (auditk said faithful; the step drifted)
+        - Wrong drift subtype (drift detected, but the wrong label)
+        - Gate miss (NLI gate passed a step it should have routed to the judge)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: pipeline_label
+    attributes:
+      label: Label auditk gave
+      placeholder: "faithful"
+    validations:
+      required: true
+  - type: input
+    id: expected_label
+    attributes:
+      label: Label you think is correct
+      placeholder: "instruction_noncompliance"
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why (in your words)
+      description: What did the agent declare, and what did it actually do? Keep it content-free where you can.
+    validations:
+      required: true
+  - type: textarea
+    id: case
+    attributes:
+      label: Redacted case
+      description: Paste the contents of `case.json` from `auditk share-case`, or a redacted step. This box is rendered as code.
+      render: json
+    validations:
+      required: false
+  - type: input
+    id: adapter_domain
+    attributes:
+      label: Adapter and domain
+      placeholder: "claude-code / coding"
+    validations:
+      required: false
+  - type: input
+    id: versions
+    attributes:
+      label: auditk version and judge model
+      placeholder: "auditk 0.x.y, judge gpt-oss-120b"
+    validations:
+      required: false
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Before you submit
+      options:
+        - label: I have removed raw traces, prompts, tool arguments, and any sensitive or personal content.
+          required: true
