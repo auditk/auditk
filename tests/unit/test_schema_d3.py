@@ -20,6 +20,34 @@ def test_step_drift_exists_with_fields() -> None:
     assert sd.reasoning == "Directly advances the declared sub-goal."
 
 
+def test_step_drift_severity_and_evidence_default() -> None:
+    """severity/evidence are additive-optional: omitting them still constructs
+    (packs built before these fields existed must still validate)."""
+    sd = StepDrift(
+        step_id="s-1",
+        label=TaxonomyLabel.FAITHFUL,
+        overturned_gate=False,
+        reasoning="ok",
+    )
+    assert sd.severity == "LOW"
+    assert sd.evidence == "n/a"
+
+
+def test_step_drift_severity_and_evidence_explicit() -> None:
+    """severity/evidence carry through when a judge supplies them — mirrors
+    RubricResult in analysis/taxonomy.py."""
+    sd = StepDrift(
+        step_id="s-1",
+        label=TaxonomyLabel.INSTRUCTION_NONCOMPLIANCE,
+        overturned_gate=False,
+        reasoning="Violated the declared constraint.",
+        severity="HIGH",
+        evidence="rm -rf /data",
+    )
+    assert sd.severity == "HIGH"
+    assert sd.evidence == "rm -rf /data"
+
+
 def test_scorer_fingerprint_exists_with_fields() -> None:
     """ScorerFingerprint must carry method, method_version, nli_model, nli_revision,
     judge_model, and judge_temperature."""
@@ -78,6 +106,38 @@ def test_drift_report_with_new_fields() -> None:
     assert report.per_step is not None
     assert report.scorer_fingerprint is not None
     assert report.taxonomy_counts == {"faithful": 1}
+
+
+def test_drift_report_carries_step_severity_and_evidence() -> None:
+    """severity/evidence set on a StepDrift survive nesting inside DriftReport.per_step
+    (the RubricResult -> StepDrift -> DriftReport leg of the thread)."""
+    step_drift = StepDrift(
+        step_id="s-1",
+        label=TaxonomyLabel.GOAL_DEVIATION,
+        overturned_gate=False,
+        reasoning="Pursued a different objective than declared.",
+        severity="MEDIUM",
+        evidence="wrote to a different file than declared",
+    )
+    report = DriftReport(
+        drift_score=1.0,
+        drift_per_trace={"t-1": 1.0},
+        flagged_steps=["s-1"],
+        method="llm-judge",
+        method_version="0.3",
+        per_step={"s-1": step_drift},
+    )
+    assert report.per_step is not None
+    assert report.per_step["s-1"].severity == "MEDIUM"
+    assert report.per_step["s-1"].evidence == "wrote to a different file than declared"
+
+    # DriftReport is itself nested under EvidencePack.drift_metrics — round-trip
+    # through JSON the way a pack is written/read to confirm the fields survive
+    # (de)serialisation, not just in-memory construction.
+    round_tripped = DriftReport.model_validate_json(report.model_dump_json())
+    assert round_tripped.per_step is not None
+    assert round_tripped.per_step["s-1"].severity == "MEDIUM"
+    assert round_tripped.per_step["s-1"].evidence == "wrote to a different file than declared"
 
 
 def test_drift_report_defaults_all_new_fields_to_none() -> None:

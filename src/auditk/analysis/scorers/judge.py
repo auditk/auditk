@@ -127,6 +127,11 @@ class TwoStageJudgeScorer:
                     label=TaxonomyLabel.GOAL_DEVIATION,
                     overturned_gate=False,
                     reasoning="NLI gate: contradict (unjudged — budget exhausted)",
+                    # Conservative drift label assigned without judge input — same
+                    # non-faithful default severity FireworksJudge falls back to
+                    # when it can't parse a severity from the model.
+                    severity="MEDIUM",
+                    evidence="n/a",
                 )
                 continue
 
@@ -143,6 +148,8 @@ class TwoStageJudgeScorer:
                 label=result.label,
                 overturned_gate=overturned,
                 reasoning=result.reasoning,
+                severity=result.severity,
+                evidence=result.evidence,
             )
             judged_count += 1
 

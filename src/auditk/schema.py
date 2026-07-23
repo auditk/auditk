@@ -184,12 +184,23 @@ class ProbeResult(BaseModel):
 
 
 class StepDrift(BaseModel):
-    """Per-step drift classification with optional judge adjudication."""
+    """Per-step drift classification with optional judge adjudication.
+
+    ``severity`` and ``evidence`` mirror ``RubricResult`` in
+    analysis/taxonomy.py (which mirrors the taxonomy-classification judge
+    that produced the auditk-trail-experiment paper's results): a
+    HIGH/MEDIUM/LOW severity rating and a short quote from the action text
+    supporting the label. They default so packs built before this field
+    existed — and scorers that never set them (jaccard, the NLI-only gate
+    path) — keep validating and verifying unchanged.
+    """
 
     step_id: str
     label: TaxonomyLabel
     overturned_gate: bool = False
     reasoning: str
+    severity: str = "LOW"
+    evidence: str = "n/a"
 
 
 class ScorerFingerprint(BaseModel):

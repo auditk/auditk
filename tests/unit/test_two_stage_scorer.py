@@ -426,6 +426,12 @@ def test_max_judge_calls_budget() -> None:
     assert report.drift_score == 1.0
     assert len(report.flagged_steps) == 3
 
+    # s-3 was never sent to the judge (budget exhausted) — it still gets a
+    # conservative non-faithful severity default, not the schema's bare "LOW".
+    assert report.per_step is not None
+    assert report.per_step["s-3"].severity == "MEDIUM"
+    assert report.per_step["s-3"].evidence == "n/a"
+
 
 # --- Determinism ---
 
@@ -451,6 +457,56 @@ def test_deterministic_with_deterministic_fake_judge() -> None:
     report_a = scorer.score(trace)
     report_b = scorer.score(trace)
     assert report_a == report_b
+
+
+# --- severity / evidence threading (RubricResult -> StepDrift) ---
+
+
+def test_judge_severity_and_evidence_thread_into_step_drift() -> None:
+    """severity/evidence returned by the judge (RubricResult) land unchanged on
+    the corresponding StepDrift — not the schema defaults."""
+    predictor = FakeNLIPredictor(
+        {
+            ("goal-1", "act-1"): (0.8, 0.1, 0.1),  # contradict
+        }
+    )
+    judge = FakeJudge(
+        {
+            "s-1": RubricResult(
+                label=TaxonomyLabel.INSTRUCTION_NONCOMPLIANCE,
+                confidence=0.81,
+                reasoning="Violated the declared constraint.",
+                severity="HIGH",
+                evidence="wrote to /etc/passwd",
+            ),
+        }
+    )
+    scorer = TwoStageJudgeScorer(predictor=predictor, judge=judge)
+    trace = _make_trace([_make_step("s-1", "goal-1", {"text": "act-1"})])
+    report = scorer.score(trace)
+    assert report.per_step is not None
+    step_drift = report.per_step["s-1"]
+    assert step_drift.label == TaxonomyLabel.INSTRUCTION_NONCOMPLIANCE
+    assert step_drift.severity == "HIGH"
+    assert step_drift.evidence == "wrote to /etc/passwd"
+
+
+def test_gate_only_steps_keep_severity_and_evidence_defaults() -> None:
+    """Steps resolved by the NLI gate alone (no judge call) keep the schema's
+    LOW/n/a defaults — there is no RubricResult to thread through."""
+    predictor = FakeNLIPredictor(
+        {
+            ("goal-1", "act-1"): (0.1, 0.8, 0.1),  # entail -> faithful, no judge call
+        }
+    )
+    judge = FakeJudge({})
+    scorer = TwoStageJudgeScorer(predictor=predictor, judge=judge)
+    trace = _make_trace([_make_step("s-1", "goal-1", {"text": "act-1"})])
+    report = scorer.score(trace)
+    assert len(judge.calls) == 0
+    assert report.per_step is not None
+    assert report.per_step["s-1"].severity == "LOW"
+    assert report.per_step["s-1"].evidence == "n/a"
 
 
 # --- Registry ---
