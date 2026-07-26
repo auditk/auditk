@@ -77,8 +77,11 @@ def _build_assistant_steps(
     tool_calls = msg.get("tool_calls", [])
 
     blocks = _extract_todo_blocks(tool_calls)
-    standing_plan = _update_standing_plan(blocks, plan.standing_plan)
-    new_plan = PlanState(pending_intent=None, standing_plan=standing_plan)
+    plan = _update_standing_plan(blocks, plan)
+    standing_plan = plan.standing_plan
+    new_plan = PlanState(
+        pending_intent=None, standing_plan=standing_plan, created_tasks=plan.created_tasks
+    )
 
     steps: list[Step] = []
     if not tool_calls:
