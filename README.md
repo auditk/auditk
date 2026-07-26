@@ -19,6 +19,7 @@ flowchart LR
 ```
 
 Full visual walkthrough: [docs/pipeline.md](docs/pipeline.md).
+How you’d run this day-to-day: [Using auditk in practice](docs/pipeline.md#using-auditk-in-practice).
 
 ## What this measures
 
@@ -59,7 +60,7 @@ The core pipeline runs end-to-end: an agent session becomes a signed, verifiable
 - Session provenance hooks for Claude Code; Hermes adapter is planned future work
 - 262 tests; `mypy --strict` clean
 
-**Worked examples:** `demos/demo-001/` and `demos/demo-005/` — real agent sessions with published evidence packs and drift scores. Note: demo-001/ and demo-005/ were generated with an earlier scalar scoring method (`plan-action-similarity@0.1`). The current pipeline uses the two-stage NLI gate + LLM judge ensemble.
+**Worked examples:** [demos/demo-001/](demos/demo-001/) and [demos/demo-005/](demos/demo-005/) — real agent sessions with published evidence packs and drift scores. Note: demo-001/ and demo-005/ were generated with an earlier scalar scoring method (`plan-action-similarity@0.1`). The current pipeline uses the two-stage NLI gate + LLM judge ensemble.
 
 **Coming next:**
 
@@ -108,6 +109,7 @@ The two-stage scoring pipeline uses a judge ensemble selected to be independent 
 ## Architecture
 
 Visual walkthrough of the end-to-end process: [docs/pipeline.md](docs/pipeline.md).
+Operating model (spot audits, CI gates, who consumes packs): [Using auditk in practice](docs/pipeline.md#using-auditk-in-practice).
 
 See [auditk-spec](https://github.com/auditk/auditk-spec) for the protocol. Key principles:
 
