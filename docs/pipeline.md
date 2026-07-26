@@ -5,6 +5,24 @@ did the agent do what it declared it would do?
 
 This page is a visual walkthrough of that process.
 
+## TL;DR
+
+1. **Capture** what the agent said it would do, and what it actually did.
+2. **Score** the gap between those two (intent–enactment drift).
+3. **Sign** the result so anyone can verify it later offline.
+
+```mermaid
+flowchart LR
+    A[Said it would] --> C{Match?}
+    B[Actually did] --> C
+    C -->|yes| D[Low drift]
+    C -->|no| E[Flagged drift]
+    D --> F[Signed evidence pack]
+    E --> F
+```
+
+That's it. Everything below is how those three steps work in detail.
+
 ---
 
 ## End-to-end pipeline

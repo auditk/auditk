@@ -2,6 +2,24 @@
 
 > Python reference implementation of [auditk-spec](https://github.com/auditk/auditk-spec) — the open standard for cryptographically attested intent–enactment drift measurement in agentic AI systems.
 
+## TL;DR
+
+1. **Capture** what the agent said it would do, and what it actually did.
+2. **Score** the gap between those two (intent–enactment drift).
+3. **Sign** the result so anyone can verify it later offline.
+
+```mermaid
+flowchart LR
+    A[Said it would] --> C{Match?}
+    B[Actually did] --> C
+    C -->|yes| D[Low drift]
+    C -->|no| E[Flagged drift]
+    D --> F[Signed evidence pack]
+    E --> F
+```
+
+Full visual walkthrough: [docs/pipeline.md](docs/pipeline.md).
+
 ## What this measures
 
 AI agents operating in consequential contexts — financial advice, clinical triage, investment suitability — must not only produce correct outputs but do what they declared they would do. Under FCA Consumer Duty, MiFID II, GDPR Article 22, and NHS clinical governance, the gap between declared and enacted process is a **compliance failure**, not a quality issue. Current AI explainability approaches reconstruct a narrative post-hoc; auditk produces a **contemporaneous, tamper-evident record** at the time of execution.
