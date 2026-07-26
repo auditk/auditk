@@ -19,7 +19,7 @@ flowchart LR
 ```
 
 Full visual walkthrough: [docs/pipeline.md](docs/pipeline.md).
-How you’d run this day-to-day: [Using auditk in practice](docs/pipeline.md#using-auditk-in-practice).
+How you’d run this day-to-day: [docs/using-in-practice.md](docs/using-in-practice.md).
 
 ## What this measures
 
@@ -109,7 +109,7 @@ The two-stage scoring pipeline uses a judge ensemble selected to be independent 
 ## Architecture
 
 Visual walkthrough of the end-to-end process: [docs/pipeline.md](docs/pipeline.md).
-Operating model (spot audits, CI gates, who consumes packs): [Using auditk in practice](docs/pipeline.md#using-auditk-in-practice).
+Operating model (PR review, acting on results, reducing drift): [docs/using-in-practice.md](docs/using-in-practice.md).
 
 See [auditk-spec](https://github.com/auditk/auditk-spec) for the protocol. Key principles:
 

@@ -3,7 +3,9 @@
 auditk turns an agent session into a **signed evidence pack** that answers:
 did the agent do what it declared it would do?
 
-This page is a visual walkthrough of that process.
+This page is a visual walkthrough of **how the pipeline works**.
+For day-to-day use, PR review, acting on results, and reducing drift, see
+[using-in-practice.md](using-in-practice.md).
 
 ## TL;DR
 
@@ -234,78 +236,9 @@ flowchart TB
 
 ---
 
-## Using auditk in practice
-
-auditk is a **local post-session audit tool**, not a hosted dashboard. Agents keep running in your existing stack (LangSmith, Langfuse, Phoenix, raw OTel, or nothing). auditk runs beside that stack to answer: *did the agent do what it declared?*
-
-### Day-to-day loop
-
-```mermaid
-flowchart LR
-    A[Agent runs<br/>as usual] --> B[Export session<br/>JSONL / OTel / checkpoint]
-    B --> C[ingest + attest]
-    C --> D[Signed evidence pack]
-    D --> E[File with case / ticket / audit trail]
-    E --> F[verify later<br/>offline]
-```
-
-1. **Agent runs as usual** — Claude Code, LangGraph, or any adapter-backed flow that records declared intent and actions.
-2. **Export the session** — e.g. Claude Code JSONL under `~/.claude/projects/...`.
-3. **Ingest and attest** — turn the session into a signed pack (use `--strip-payloads` when packs may leave a secure machine).
-4. **Store the pack** with the business record (ticket, case file, change request).
-5. **Verify later** with the org public key — no auditk server required; tampering fails `verify`.
-
-```bash
-auditk ingest --adapter claude-code \
-  --in <session.jsonl> --out trace.json --strip-payloads
-
-auditk attest --traces trace.json --signer org_signing_key \
-  --issuer-name "Acme Compliance" \
-  --agent-id advice-bot --agent-version 1.2 \
-  --out packs/2026-07-16-session-abc.json
-
-auditk verify packs/2026-07-16-session-abc.json \
-  --public-key org_signing_key.ed25519.pub
-```
-
-### Who uses the output
-
-| Role | What they care about |
-|------|----------------------|
-| Eng / platform | Flag high-drift sessions for review |
-| Compliance / risk | Portable proof that process was recorded and scored at the time |
-| Auditor / regulator | Offline `verify` + drift taxonomy labels |
-| Incident response | Reconstruct “said vs did” when something went wrong |
-
-### Deployment patterns
-
-| Pattern | When | Maturity |
-|---------|------|----------|
-| **Spot audits** | Sample important sessions weekly/monthly | Works today (same flow as [demo-001](../demos/demo-001/) / [demo-005](../demos/demo-005/)) |
-| **Consequential gate** | CI or checklist before accepting an agent’s prod change; fail if `drift_score` exceeds a threshold | Near-term; wire CLI into your pipeline |
-| **Batch provenance** | Post-session hook logs session IDs; overnight job ingests + attests | Claude Code hooks exist; Hermes planned |
-| **Regulated agents** | Voice / financial advice / clinical AI — pack attached to the case | Target domain; coding agents are the current PoC |
-
-### Prerequisites
-
-- The agent **declares intent** somehow (todos, plan steps, structured goals). No declaration → nothing to compare.
-- You control a **signing key** (today: local Ed25519; org HSM later).
-- You’re OK with **batch / after-the-fact** analysis — live streaming attestation is not the product yet.
-- Full NLI + LLM judge path needs the `[nli]` extra and (for the judge) an API key such as `FIREWORKS_API_KEY`.
-
-### What this is not (in a real environment)
-
-- Not a SaaS you log into — local tool + open standard
-- Not a replacement for LangSmith / Langfuse / Phoenix
-- Not a certificate of regulatory compliance — packs are **evidence material** for your own process
-- Not a lie detector for a deceptive agent that fabricates a plan matching its hidden goal
-
-See also: [README — What this is not](../README.md#what-this-is-not), [demos/demo-001/](../demos/demo-001/).
-
----
-
 ## Related
 
+- [using-in-practice.md](using-in-practice.md) — operating model, PR review, acting on results, reducing drift
 - [README](../README.md) — install, status, research findings
 - [auditk-spec](https://github.com/auditk/auditk-spec) — normative schemas
 - [demos/demo-001/](../demos/demo-001/) / [demos/demo-005/](../demos/demo-005/) — worked examples with signed packs
