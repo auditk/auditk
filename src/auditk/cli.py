@@ -75,6 +75,70 @@ def ingest(
 
 
 @app.command()
+def report(
+    adapter: str = typer.Option("claude-code", help="Adapter name (e.g. claude-code)."),
+    in_file: str = typer.Option(..., "--in", help="Session file to load (.jsonl or .json)."),
+    out: str | None = typer.Option(None, help="Output file path (default: stdout)."),
+    output_format: str = typer.Option(
+        "md", "--format", help="Output format: md (markdown, default) or json."
+    ),
+    root: str = typer.Option(
+        "",
+        "--root",
+        help="Comma-separated allowed write roots for scope-escape checking, e.g. /a,/b.",
+    ),
+    plan_tasks: str | None = typer.Option(
+        None,
+        "--plan-tasks",
+        help="Directory of persisted plan-store task files (claude-code adapter only).",
+    ),
+) -> None:
+    """Produce a single-session post-mortem report (markdown or JSON)."""
+    from auditk.adapters import get_adapter
+    from auditk.adapters.claude_code import ingest_claude_code_session, load_plan_tasks
+    from auditk.analysis.findings import FindingsConfig, analyze_trace
+    from auditk.analysis.report import build_report, render_markdown
+
+    if output_format not in ("md", "json"):
+        typer.echo(f"Error: Unknown format {output_format!r}. Choose from: md, json")
+        raise typer.Exit(1)
+
+    if plan_tasks and adapter != "claude-code":
+        typer.echo("Error: --plan-tasks is only supported with --adapter claude-code")
+        raise typer.Exit(1)
+
+    in_path = Path(in_file)
+    if in_path.suffix == ".jsonl":
+        events = [json.loads(line) for line in in_path.read_text().splitlines() if line.strip()]
+    else:
+        events = json.loads(in_path.read_text())
+
+    if adapter == "claude-code":
+        plan_tasks_list = load_plan_tasks(Path(plan_tasks)) if plan_tasks else None
+        trace = ingest_claude_code_session(events, plan_tasks=plan_tasks_list)
+    else:
+        trace_adapter = get_adapter(adapter)
+        trace = trace_adapter.ingest(events)
+
+    roots = [r.strip() for r in root.split(",") if r.strip()]
+    config = FindingsConfig(roots=roots or None)
+    findings = analyze_trace(trace, config)
+    report_model = build_report(trace, findings, config=config)
+
+    content = (
+        report_model.model_dump_json(indent=2)
+        if output_format == "json"
+        else render_markdown(report_model)
+    )
+
+    if out:
+        Path(out).write_text(content)
+        typer.echo(f"Report written to {out}")
+    else:
+        typer.echo(content)
+
+
+@app.command()
 def attest(
     traces: str = typer.Option(..., help="Path to a trace file (.json or .jsonl)."),
     signer: str = typer.Option(..., help="Base path to Ed25519 key (no extension)."),
