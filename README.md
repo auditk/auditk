@@ -2,6 +2,25 @@
 
 > Python reference implementation of [auditk-spec](https://github.com/auditk/auditk-spec) — the open standard for cryptographically attested intent–enactment drift measurement in agentic AI systems.
 
+## TL;DR
+
+1. **Capture** what the agent said it would do, and what it actually did.
+2. **Score** the gap between those two (intent–enactment drift).
+3. **Sign** the result so anyone can verify it later offline.
+
+```mermaid
+flowchart LR
+    A[Said it would] --> C{Match?}
+    B[Actually did] --> C
+    C -->|yes| D[Low drift]
+    C -->|no| E[Flagged drift]
+    D --> F[Signed evidence pack]
+    E --> F
+```
+
+Full visual walkthrough: [docs/pipeline.md](docs/pipeline.md).
+How you’d run this day-to-day: [docs/using-in-practice.md](docs/using-in-practice.md).
+
 ## What this measures
 
 AI agents operating in consequential contexts — financial advice, clinical triage, investment suitability — must not only produce correct outputs but do what they declared they would do. Under FCA Consumer Duty, MiFID II, GDPR Article 22, and NHS clinical governance, the gap between declared and enacted process is a **compliance failure**, not a quality issue. Current AI explainability approaches reconstruct a narrative post-hoc; auditk produces a **contemporaneous, tamper-evident record** at the time of execution.
@@ -41,7 +60,7 @@ The core pipeline runs end-to-end: an agent session becomes a signed, verifiable
 - Session provenance hooks for Claude Code; Hermes adapter is planned future work
 - 262 tests; `mypy --strict` clean
 
-**Worked examples:** `demos/demo-001/` and `demos/demo-005/` — real agent sessions with published evidence packs and drift scores. Note: demo-001/ and demo-005/ were generated with an earlier scalar scoring method (`plan-action-similarity@0.1`). The current pipeline uses the two-stage NLI gate + LLM judge ensemble.
+**Worked examples:** [demos/demo-001/](demos/demo-001/) and [demos/demo-005/](demos/demo-005/) — real agent sessions with published evidence packs and drift scores. Note: demo-001/ and demo-005/ were generated with an earlier scalar scoring method (`plan-action-similarity@0.1`). The current pipeline uses the two-stage NLI gate + LLM judge ensemble.
 
 **Coming next:**
 
@@ -88,6 +107,9 @@ The two-stage scoring pipeline uses a judge ensemble selected to be independent 
 - Not a framework replacement. Adapter pattern only.
 
 ## Architecture
+
+Visual walkthrough of the end-to-end process: [docs/pipeline.md](docs/pipeline.md).
+Operating model (PR review, acting on results, reducing drift): [docs/using-in-practice.md](docs/using-in-practice.md).
 
 See [auditk-spec](https://github.com/auditk/auditk-spec) for the protocol. Key principles:
 
