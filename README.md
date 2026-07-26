@@ -89,6 +89,8 @@ The two-stage scoring pipeline uses a judge ensemble selected to be independent 
 
 ## Architecture
 
+Visual walkthrough of the end-to-end process: [docs/pipeline.md](docs/pipeline.md).
+
 See [auditk-spec](https://github.com/auditk/auditk-spec) for the protocol. Key principles:
 
 - **Pure-functional core.** Analysis takes traces + config + probe spec, returns findings. No global state, no I/O.
