@@ -99,8 +99,10 @@ class FindingsReport(BaseModel):
 class FindingsConfig(BaseModel):
     """Tunable knobs for the findings engine. All rules have sane defaults."""
 
-    # Allowed write roots. None => derive from trace.metadata["cwd"]; if
-    # that is also absent, the scope-escape rule cannot run.
+    # Allowed write roots. None => auto-discover: the git root of
+    # trace.metadata["cwd"] (see analysis/ruleset.py:resolve_roots), falling
+    # back to the bare cwd outside a git repo; if cwd is also absent, the
+    # scope-escape rule cannot run.
     roots: list[str] | None = None
     # Path prefixes where writes are always benign (e.g. scratch/tmp dirs).
     scratch_prefixes: list[str] = Field(default_factory=lambda: ["/tmp"])  # noqa: S108
@@ -167,13 +169,18 @@ def _under_any(path: str, prefixes: list[str]) -> bool:
 
 
 def _resolve_roots(trace: Trace, config: FindingsConfig) -> list[str] | None:
-    """The allowed write roots for scope-escape checking, or None if unknown."""
-    if config.roots is not None:
-        return config.roots
-    cwd = trace.metadata.get("cwd")
-    if isinstance(cwd, str) and cwd:
-        return [cwd]
-    return None
+    """The allowed write roots for scope-escape checking, or None if unknown.
+
+    Delegates to ``auditk.analysis.ruleset.resolve_roots``: when
+    ``config.roots`` is None, the roots are auto-discovered as the git root
+    of ``trace.metadata["cwd"]`` (falling back to the bare cwd outside a git
+    repo), rather than always using the bare cwd. Imported lazily to avoid a
+    circular import (``ruleset.py`` imports ``FindingsConfig`` from this
+    module).
+    """
+    from auditk.analysis.ruleset import resolve_roots
+
+    return resolve_roots(config, trace)
 
 
 def find_writes_outside_roots(trace: Trace, config: FindingsConfig) -> list[Finding]:
@@ -186,7 +193,9 @@ def find_writes_outside_roots(trace: Trace, config: FindingsConfig) -> list[Find
     ``action.payload["input"]["file_path"]`` is:
 
     - not a path under any of ``config.roots`` (or, when ``config.roots`` is
-      None, under ``trace.metadata["cwd"]``), AND
+      None, under the auto-discovered git root of ``trace.metadata["cwd"]``,
+      falling back to the bare cwd outside a git repo — see
+      ``analysis/ruleset.py:resolve_roots``), AND
     - not a path under any of ``config.scratch_prefixes`` (benign scratch
       writes, e.g. ``/tmp``).
 

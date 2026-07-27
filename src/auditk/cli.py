@@ -85,7 +85,14 @@ def report(
     root: str = typer.Option(
         "",
         "--root",
-        help="Comma-separated allowed write roots for scope-escape checking, e.g. /a,/b.",
+        help="Comma-separated allowed write roots for scope-escape checking, e.g. /a,/b. "
+        "Overrides the ruleset's roots (including auto-discovery).",
+    ),
+    rules: str | None = typer.Option(
+        None,
+        "--rules",
+        help="Path to an explicit ruleset YAML file, taking precedence over the ruleset "
+        "cascade (shipped default, per-user, per-project, $AUDITK_RULES).",
     ),
     plan_tasks: str | None = typer.Option(
         None,
@@ -96,8 +103,9 @@ def report(
     """Produce a single-session post-mortem report (markdown or JSON)."""
     from auditk.adapters import get_adapter
     from auditk.adapters.claude_code import ingest_claude_code_session, load_plan_tasks
-    from auditk.analysis.findings import FindingsConfig, analyze_trace
+    from auditk.analysis.findings import analyze_trace
     from auditk.analysis.report import build_report, render_markdown
+    from auditk.analysis.ruleset import RulesetError, load_ruleset
 
     if output_format not in ("md", "json"):
         typer.echo(f"Error: Unknown format {output_format!r}. Choose from: md, json")
@@ -120,8 +128,18 @@ def report(
         trace_adapter = get_adapter(adapter)
         trace = trace_adapter.ingest(events)
 
-    roots = [r.strip() for r in root.split(",") if r.strip()]
-    config = FindingsConfig(roots=roots or None)
+    session_cwd = trace.metadata.get("cwd")
+    start_dir = Path(session_cwd) if isinstance(session_cwd, str) and session_cwd else Path.cwd()
+    try:
+        config = load_ruleset(explicit_path=rules, start_dir=start_dir)
+    except RulesetError as exc:
+        typer.echo(f"Error: {exc}")
+        raise typer.Exit(1) from None
+
+    explicit_roots = [r.strip() for r in root.split(",") if r.strip()]
+    if explicit_roots:
+        config = config.model_copy(update={"roots": explicit_roots})
+
     findings = analyze_trace(trace, config)
     report_model = build_report(trace, findings, config=config)
 
