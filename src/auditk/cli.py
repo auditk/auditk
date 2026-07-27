@@ -19,6 +19,12 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+rules_app = typer.Typer(
+    help="Manage local findings-engine rulesets.",
+    no_args_is_help=True,
+)
+app.add_typer(rules_app, name="rules")
+
 _SCORER_MAP: dict[str, str] = {
     "jaccard": DEFAULT_SCORER,
     "nli": "nli@0.2",
@@ -99,11 +105,17 @@ def report(
         "--plan-tasks",
         help="Directory of persisted plan-store task files (claude-code adapter only).",
     ),
+    no_policy_context: bool = typer.Option(
+        False,
+        "--no-policy-context",
+        help="Skip CLAUDE.md policy-context discovery (for portability/privacy).",
+    ),
 ) -> None:
     """Produce a single-session post-mortem report (markdown or JSON)."""
     from auditk.adapters import get_adapter
     from auditk.adapters.claude_code import ingest_claude_code_session, load_plan_tasks
     from auditk.analysis.findings import analyze_trace
+    from auditk.analysis.policy_context import discover_policy_context
     from auditk.analysis.report import build_report, render_markdown
     from auditk.analysis.ruleset import RulesetError, load_ruleset
 
@@ -140,8 +152,10 @@ def report(
     if explicit_roots:
         config = config.model_copy(update={"roots": explicit_roots})
 
+    policy_context = None if no_policy_context else discover_policy_context(start_dir=start_dir)
+
     findings = analyze_trace(trace, config)
-    report_model = build_report(trace, findings, config=config)
+    report_model = build_report(trace, findings, config=config, policy_context=policy_context)
 
     content = (
         report_model.model_dump_json(indent=2)
@@ -325,6 +339,48 @@ def verify(
             raise typer.Exit(1) from exc
 
     typer.echo(f"✓ Evidence pack verified. Pack ID: {pack_obj.pack_id}")
+
+
+@rules_app.command("init")
+def rules_init(
+    from_dir: str = typer.Option(
+        ".", "--from", help="Directory to discover the CLAUDE.md policy cascade from."
+    ),
+    out: str | None = typer.Option(
+        None, "--out", help="Write the scaffold to this path (default: stdout)."
+    ),
+    force: bool = typer.Option(False, "--force", help="Overwrite --out if it already exists."),
+) -> None:
+    """Scaffold a starter ruleset YAML from the local CLAUDE.md cascade.
+
+    Nothing is written unless --out is given: by default the scaffold goes
+    to stdout so nothing is auto-created. The scaffold is always the shipped
+    default ruleset, annotated with a comment noting which CLAUDE.md files
+    were scanned and which generic policy phrases they contain — review and
+    edit it before using it as a real ruleset.
+    """
+    from auditk.analysis.policy_context import discover_policy_context
+    from auditk.analysis.rules_scaffold import build_starter_ruleset
+
+    policy_docs = discover_policy_context(start_dir=Path(from_dir))
+    scaffold = build_starter_ruleset(policy_docs)
+
+    if out is None:
+        typer.echo(scaffold)
+        return
+
+    out_path = Path(out)
+    if out_path.exists() and not force:
+        typer.echo(f"Error: {out_path} already exists. Re-run with --force to overwrite.")
+        raise typer.Exit(1)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(scaffold)
+    typer.echo(f"Starter ruleset written to {out_path}")
+    typer.echo(
+        "Hint: the intended home is ~/.claude/auditk.rules.yaml (per-user) or "
+        ".auditk/rules.yaml (per-project) — both meant to be gitignored."
+    )
 
 
 if __name__ == "__main__":

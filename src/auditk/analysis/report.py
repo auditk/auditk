@@ -41,6 +41,7 @@ from auditk.analysis.findings import (
     FindingsReport,
     Severity,
 )
+from auditk.analysis.policy_context import PolicyDoc
 from auditk.schema import ActionType, Actor, Step, Trace
 
 # Edit-family tool calls collapsed into a single "edit" timeline entry per
@@ -101,6 +102,7 @@ class ReportModel(BaseModel):
     findings: FindingsReport
     turns: list[TurnCompliance] = Field(default_factory=list)
     not_checked: dict[str, str] = Field(default_factory=dict)
+    policy_context: list[PolicyDoc] = Field(default_factory=list)
 
 
 # --- Small shared helpers over Step/Action shape -------------------------
@@ -369,6 +371,7 @@ def build_report(
     findings: FindingsReport,
     *,
     config: FindingsConfig | None = None,
+    policy_context: list[PolicyDoc] | None = None,
 ) -> ReportModel:
     """Assemble the full post-mortem ``ReportModel`` for `trace` + `findings`.
 
@@ -376,6 +379,13 @@ def build_report(
     typically passes the same ``FindingsConfig`` used to produce
     `findings`) but is not currently consulted by report assembly itself —
     all findings-related tuning happens upstream in ``analyze_trace``.
+
+    `policy_context` is the CLAUDE.md-family policy docs discovered for this
+    session's working directory (see ``auditk.analysis.policy_context``), or
+    None (defaulting to an empty list) when the caller skipped discovery.
+    This function does not perform discovery itself, keeping it a pure
+    function of its inputs — the CLI does discovery and passes the result
+    in.
     """
     timeline = build_timeline(trace)
     turns = extract_turn_compliance(trace)
@@ -387,6 +397,7 @@ def build_report(
         findings=findings,
         turns=turns,
         not_checked=dict(findings.not_checked),
+        policy_context=list(policy_context) if policy_context is not None else [],
     )
 
 
@@ -407,6 +418,16 @@ def _format_header_table(header: dict[str, Any]) -> str:
     lines = ["| Field | Value |", "| --- | --- |"]
     for label, value in rows:
         lines.append(f"| {label} | {value if value is not None else '(unknown)'} |")
+    return "\n".join(lines)
+
+
+def _format_policy_context(policy_context: list[PolicyDoc]) -> str:
+    if not policy_context:
+        return "No CLAUDE.md policy files were discovered for this session's working directory."
+    lines = []
+    for doc in policy_context:
+        title = doc.title if doc.title else "(no heading)"
+        lines.append(f"- **{doc.scope}** `{doc.path}` — {title}")
     return "\n".join(lines)
 
 
@@ -480,10 +501,10 @@ def _format_not_checked(not_checked: dict[str, str]) -> str:
 def render_markdown(report: ReportModel) -> str:
     """Render `report` as a deterministic markdown post-mortem document.
 
-    Section order: Summary, Timeline, Findings, Instruction compliance, Not
-    checked. Purely a function of `report`'s own fields — no wall-clock
-    timestamps or randomness are introduced here, so calling this twice on
-    the same ``ReportModel`` always returns identical strings.
+    Section order: Summary, Policy context, Timeline, Findings, Instruction
+    compliance, Not checked. Purely a function of `report`'s own fields — no
+    wall-clock timestamps or randomness are introduced here, so calling this
+    twice on the same ``ReportModel`` always returns identical strings.
     """
     sections = [
         "# Session post-mortem",
@@ -491,6 +512,10 @@ def render_markdown(report: ReportModel) -> str:
         "## Summary",
         "",
         _format_header_table(report.header),
+        "",
+        "## Policy context",
+        "",
+        _format_policy_context(report.policy_context),
         "",
         "## Timeline",
         "",

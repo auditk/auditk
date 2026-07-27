@@ -214,9 +214,22 @@ def test_render_markdown_is_deterministic() -> None:
 
 
 def test_cli_report_markdown() -> None:
+    # --no-policy-context: this test doesn't exercise CLAUDE.md discovery and
+    # must not fall back to the real $HOME/.claude/CLAUDE.md (see
+    # test_policy_context.py for the discovery/report-wiring coverage, which
+    # isolates $HOME via monkeypatch instead).
     result = runner.invoke(
         app,
-        ["report", "--adapter", "claude-code", "--in", str(ANOMALIES_FIXTURE), "--format", "md"],
+        [
+            "report",
+            "--adapter",
+            "claude-code",
+            "--in",
+            str(ANOMALIES_FIXTURE),
+            "--format",
+            "md",
+            "--no-policy-context",
+        ],
     )
     assert result.exit_code == 0, result.output
     assert "Session post-mortem" in result.output
@@ -226,7 +239,16 @@ def test_cli_report_markdown() -> None:
 def test_cli_report_json() -> None:
     result = runner.invoke(
         app,
-        ["report", "--adapter", "claude-code", "--in", str(ANOMALIES_FIXTURE), "--format", "json"],
+        [
+            "report",
+            "--adapter",
+            "claude-code",
+            "--in",
+            str(ANOMALIES_FIXTURE),
+            "--format",
+            "json",
+            "--no-policy-context",
+        ],
     )
     assert result.exit_code == 0, result.output
     parsed = json.loads(result.output)
@@ -248,6 +270,7 @@ def test_cli_report_writes_to_out_file(tmp_path: Path) -> None:
             "md",
             "--out",
             str(out_file),
+            "--no-policy-context",
         ],
     )
     assert result.exit_code == 0, result.output
