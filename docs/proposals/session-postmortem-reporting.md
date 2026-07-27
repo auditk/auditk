@@ -199,18 +199,59 @@ Sections:
 that names the `launch.json` scope escape and the `script.js` churn burst, and
 does *not* flag the TDD work as a problem.
 
-### Phase 4 — Private ruleset loading
+### Phase 4 — Ruleset loading, environment discovery, and the CLAUDE.md bridge
 
-- `--rules <path>` and `AUDITK_RULES` env var.
-- A small **public default ruleset** ships with the repo (generic, safe:
-  write-outside-roots, edit-without-verify, tool-error-cluster).
-- Private rulesets live outside the repo. Add a gitignore entry and document
-  authoring. Matt's constitution content is never copied into the repo — he
-  authors a private `rules.yaml` encoding only the mechanically checkable subset.
-- Document plainly: this is a curated subset, not an encoding of the constitution.
+auditk is a **public** repo (`github.com/auditk/auditk`). A ruleset that encoded
+one user's constitution would leak that user's setup into shared code. So the
+governing principle is **three layers, only the middle ships**:
 
-**Gate:** the repo contains no private rule content; report output differs
-correctly with and without a private ruleset.
+| Layer | Ships? | Contents |
+|---|---|---|
+| Engine + predicate vocabulary | yes, generic | the seven predicates, `Finding` types |
+| `rules.default.yaml` | yes, generic | universally-safe defaults: `rm -rf`/`DROP TABLE`/force-push tripwires, generic thresholds, roots = auto git-root. **What runs on any machine with zero config.** |
+| Local ruleset | **never** | a user's own `auditk.rules.yaml`, gitignored, out of the repo entirely |
+
+Three mechanisms keep it generic rather than bespoke:
+
+1. **Discovery cascade** (mirrors how Claude Code resolves CLAUDE.md itself):
+   `--rules PATH` › `$AUDITK_RULES` › a repo-local `.auditk/rules.yaml` walking up
+   from the session's cwd › `~/.claude/auditk.rules.yaml` › the shipped default.
+   Layered merge — a project ruleset extends the global, which extends the
+   default. A machine with none of these gets the safe defaults.
+2. **Roots auto-discovery** = the git top-level of the session's cwd (deterministic,
+   works anywhere). Removes any hardcoded path and simultaneously fixes the Phase 2
+   scope-escape roots limitation (default roots were the first-event cwd, too broad
+   for sessions that `cd` into a repo).
+3. **CLAUDE.md is read from wherever it lives on the running machine**, never a
+   baked-in path.
+
+**The CLAUDE.md bridge (decision: surface + opt-in scaffold, deterministic, no LLM):**
+- **Surface:** the report discovers the CLAUDE.md cascade in effect for the session
+  (global `~/.claude/CLAUDE.md`, plus `CLAUDE.md` and `.claude/CLAUDE.md` walking up
+  from the session cwd, plus `.claude/rules/*.md`) and lists them in a **Policy
+  context** section, so a reader knows what standard the session ran under — on
+  whatever machine, reading that machine's files. Rules themselves still come from
+  the ruleset layer.
+- **Scaffold:** an opt-in `auditk rules init` keyword-scans the discovered CLAUDE.md
+  for known hard-rule patterns (`never delete`, `before every commit`, `.env`,
+  `migration`, `infrastructure`) and emits a **starter** `rules.yaml` the user then
+  edits. The scaffold is a reviewed convenience, never the live rule source; the
+  live path stays fully deterministic.
+
+**Ruleset schema (sketch):** roots (or `auto`), scratch prefixes, per-predicate
+enable + thresholds, tripwire name→regex map, and a `verify_patterns` list — i.e.
+the existing `FindingsConfig` fields, made loadable/mergeable from YAML plus a
+`disclaimer` field. No new predicates; this is config plumbing.
+
+**Documentation** (`docs/rules.md`): the predicate catalogue, the default ruleset,
+the discovery cascade, how to author a private ruleset, and the explicit non-goal —
+auditk ships generic checks, reads whatever CLAUDE.md is on this machine, and a
+user's constitution stays local and unshared.
+
+**Gate:** the repo contains no private rule content (a test asserts the shipped
+default is generic); `report` output differs correctly with and without a local
+ruleset; on a machine with no config the defaults run; the Policy-context section
+lists the real CLAUDE.md cascade for a given session cwd.
 
 ### Phase 5 — Adapter self-check (canary)
 
