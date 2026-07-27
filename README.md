@@ -18,7 +18,7 @@ auditk is Apache-2.0, protocol-first, and integrates with whatever you are alrea
 
 Key empirical findings:
 - Drift range 0.016–0.210 across Claude Code sessions; all five taxonomy categories firing in production
-- Cross-model benchmark (4 model families — Claude, Kimi K2, MiniMax M2, DeepSeek) on identical sessions with reversed and distractor seeds: Kimi K2 is the only model to drift on the distractor
+- Cross-model scoring protocol (4 model families — Claude, Kimi K2, MiniMax M2, DeepSeek): one fixed instrument applied identically, so scores sit on a common scale by construction. A positive-control analysis of the 40-session benchmark found no ground-truth boundary-crossings to detect, so no cross-model detection or discriminative-power claim is made (37/40 sessions score 0.0; the three non-zero cases are false positives from a superseded judge, pending a corrected re-run)
 - Cross-taxonomy comparison with TRAIL (31 SWE-bench traces): NLI gate: recall 0.62, precision 0.38, F1 0.47. Full pipeline: recall 0.042, precision 0.292, F1 0.074. The low full-pipeline recall against TRAIL is the central finding — instruments measure orthogonal constructs, not a calibration failure. Manual inspection confirms 171 judge-stage steps TRAIL does not flag as errors are correctly resolved as faithful by the judge.
 - Attestation integrity: 100 tampered evidence packs → 100% rejection
 
@@ -39,7 +39,7 @@ The core pipeline runs end-to-end: an agent session becomes a signed, verifiable
 - Single-session post-mortem reporting: `auditk report` renders a deterministic, model-free structural post-mortem of a session (markdown or JSON)
 - Structural findings engine: rule-driven detection over a session — scope-escape beyond allowed write roots, churn bursts, commit-without-tests, error clusters, unobserved delegation, abandoned artifacts, and command tripwires (destructive `rm`, force-push, migrations, `.env` writes) — with no model calls
 - Ruleset cascade + policy context: layered rulesets (shipped default → per-user → per-project `.auditk/rules.yaml` → `$AUDITK_RULES`), automatic git-root discovery, CLAUDE.md policy-context surfacing, and `auditk rules init` scaffolding
-- Cross-model benchmark: 4 models, calibrated and directly comparable
+- Cross-model scoring protocol: one fixed instrument applied identically across 4 model families — common scale by construction (not per-model calibration; no cross-model detection claim, benchmark under corrected re-run)
 - Cross-taxonomy comparison with TRAIL dataset: NLI gate recall 0.62 / F1 0.47; full pipeline recall 0.042 / F1 0.074 (instruments measure orthogonal constructs)
 - Session provenance hooks for Claude Code; Hermes adapter is planned future work
 - 375 tests passing (22 skipped); `mypy --strict` clean
