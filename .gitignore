@@ -58,3 +58,6 @@ benchmark_results/real_sessions/
 # Machine-local ruleset overrides for the findings engine (never checked in)
 auditk.rules.yaml
 .auditk/
+
+# runpod-flash tooling cache (local only)
+.flash/
