@@ -30,16 +30,19 @@ The core pipeline runs end-to-end: an agent session becomes a signed, verifiable
 
 **Working today:**
 
-- Trace adapters: Claude Code session JSONL, OpenTelemetry/OpenInference, LangGraph checkpoints
+- Trace adapters: Claude Code session JSONL (modern transcript formats supported), OpenTelemetry/OpenInference, LangGraph checkpoints
 - Two-stage scoring pipeline: NLI gate (DeBERTa-v3 asymmetric entailment) + LLM judge ensemble
 - Five-category taxonomy: `faithful` / `benign_elaboration` / `goal_deviation` / `instruction_noncompliance` / `undeclared_goal` — with severity (LOW/MEDIUM/HIGH) and evidence fields
 - Drift score: scalar, decomposable, session-length invariant
 - Attestation: Ed25519 signing, canonical JSON, portable evidence pack
-- CLI: `key-gen`, `ingest`, `attest`, `verify`
+- CLI: `key-gen`, `ingest`, `report`, `attest`, `replay`, `diff`, `verify`, `rules init`
+- Single-session post-mortem reporting: `auditk report` renders a deterministic, model-free structural post-mortem of a session (markdown or JSON)
+- Structural findings engine: rule-driven detection over a session — scope-escape beyond allowed write roots, churn bursts, commit-without-tests, error clusters, unobserved delegation, abandoned artifacts, and command tripwires (destructive `rm`, force-push, migrations, `.env` writes) — with no model calls
+- Ruleset cascade + policy context: layered rulesets (shipped default → per-user → per-project `.auditk/rules.yaml` → `$AUDITK_RULES`), automatic git-root discovery, CLAUDE.md policy-context surfacing, and `auditk rules init` scaffolding
 - Cross-model benchmark: 4 models, calibrated and directly comparable
 - Cross-taxonomy comparison with TRAIL dataset: NLI gate recall 0.62 / F1 0.47; full pipeline recall 0.042 / F1 0.074 (instruments measure orthogonal constructs)
 - Session provenance hooks for Claude Code; Hermes adapter is planned future work
-- 262 tests; `mypy --strict` clean
+- 375 tests passing (22 skipped); `mypy --strict` clean
 
 **Worked examples:** `demos/demo-001/` and `demos/demo-005/` — real agent sessions with published evidence packs and drift scores. Note: demo-001/ and demo-005/ were generated with an earlier scalar scoring method (`plan-action-similarity@0.1`). The current pipeline uses the two-stage NLI gate + LLM judge ensemble.
 
@@ -71,6 +74,17 @@ auditk attest --traces trace.json \
 
 # Verify the signature
 auditk verify evidence-pack.json --public-key signing_key.ed25519.pub
+```
+
+Or produce a lightweight, model-free post-mortem of a single session — deterministic structural findings, no attestation or model calls:
+
+```bash
+# Post-mortem report for a session (markdown to stdout; --format json for JSON)
+auditk report --adapter claude-code \
+  --in ~/.claude/projects/<path>/<session>.jsonl
+
+# Scaffold a starter ruleset from your CLAUDE.md policy cascade
+auditk rules init --from . --out .auditk/rules.yaml
 ```
 
 ## Scope and limitations
