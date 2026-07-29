@@ -61,6 +61,23 @@ class PlanState:
     created_tasks: list[dict[str, Any]] = field(default_factory=list)
 
 
+@dataclass
+class SubagentTranscript:
+    """One subagent (delegate) transcript, already discovered and parsed.
+
+    Pairs the delegate's id (the ``<agentId>`` filename segment), its
+    persisted brief (``agent-<agentId>.meta.json``, parsed but otherwise
+    untouched — ``agentType``/``description``/``toolUseId``/``spawnDepth``),
+    and its own JSONL event records (file order). See `load_subagent_transcripts`
+    for how these are discovered on disk, and `ingest_claude_code_session`'s
+    ``subagents`` parameter for how they get flattened into the parent trace.
+    """
+
+    agent_id: str
+    meta: dict[str, Any]
+    events: list[dict[str, Any]]
+
+
 _SUBSTANTIVE_TYPES = ("user", "assistant")
 _REDACTION_KEY = "redacted"
 _PLAN_ACTIVE_STATUSES = ("pending", "in_progress")
@@ -73,6 +90,7 @@ def ingest_claude_code_session(
     strip_payloads: bool = False,
     *,
     plan_tasks: list[dict[str, Any]] | None = None,
+    subagents: list[SubagentTranscript] | None = None,
 ) -> Trace:
     """Convert a list of Claude Code session event dicts into a Trace.
 
@@ -84,6 +102,19 @@ def ingest_claude_code_session(
             (status ``pending``/``in_progress``) seed the standing plan
             before the transcript is walked; transcript ``TaskCreate``/
             ``TaskUpdate``/``TodoWrite`` calls still update it from there.
+        subagents: Already-discovered-and-parsed subagent (delegate)
+            transcripts (see `load_subagent_transcripts`), if available.
+            Each is joined to the parent `Task`/`Agent` tool_use whose own
+            `id` equals that transcript's `meta["toolUseId"]`; on a match,
+            the delegate's own steps are flattened into this trace (D4:
+            `parent_step_id` = the owning Task step, `metadata["agent_id"]`
+            = the delegate id, `declared_intent` seeded from the delegate's
+            own brief per D5 — never this trace's standing plan), and that
+            Task step's `delegation_unobserved` marker is cleared. A `Task`
+            call with no matching transcript (or no `subagents` at all)
+            keeps that marker, unchanged from today's behaviour. This
+            function stays pure regardless: no I/O happens here, whether or
+            not `subagents` is given.
 
     Raises:
         ValueError: If no substantive (user/assistant) events are present.
@@ -93,11 +124,32 @@ def ingest_claude_code_session(
         raise ValueError("session contains no user/assistant events")
 
     session_id = str(substantive[0].get("sessionId") or "unknown")
+
+    # tool_use id -> (owning step id, Task input.prompt), for every
+    # Task/Agent call in this transcript. Computed up front (independent of
+    # `steps` construction below) so the delegation_unobserved marker can
+    # be set correctly on FIRST construction rather than mutated after the
+    # fact, and so the delegate-ingestion pass has somewhere to attach to.
+    task_index = _index_delegation_task_steps(substantive, session_id)
+    subagents_by_tool_use_id = _index_subagents_by_tool_use_id(subagents)
+    matched_tool_use_ids = frozenset(subagents_by_tool_use_id) & frozenset(task_index)
+
     steps: list[Step] = []
     plan = PlanState(standing_plan=_plan_active_text(plan_tasks) if plan_tasks else None)
     for event in substantive:
-        new_steps, plan = _event_to_steps(event, session_id, strip_payloads, plan)
+        new_steps, plan = _event_to_steps(
+            event, session_id, strip_payloads, plan, matched_tool_use_ids
+        )
         steps.extend(new_steps)
+
+    for tool_use_id in matched_tool_use_ids:
+        task_step_id, task_prompt = task_index[tool_use_id]
+        transcript = subagents_by_tool_use_id[tool_use_id]
+        steps.extend(
+            _ingest_subagent_transcript(
+                transcript, task_step_id, task_prompt, session_id, strip_payloads
+            )
+        )
 
     return Trace(
         trace_id=session_id,
@@ -137,10 +189,167 @@ def load_plan_tasks(session_dir: Path) -> list[dict[str, Any]]:
     return tasks
 
 
+def load_subagent_transcripts(session_dir: Path) -> list[SubagentTranscript]:
+    """Discover and load subagent (delegate) transcripts from
+    ``<session_dir>/subagents/`` (D7's verified on-disk layout: the parent
+    transcript ``<uuid>.jsonl`` is a SIBLING of ``<uuid>/``, and delegate
+    transcripts live at ``<uuid>/subagents/agent-<agentId>.jsonl`` with a
+    sidecar ``agent-<agentId>.meta.json``).
+
+    For each ``agent-*.jsonl`` file with a readable, JSON-object
+    ``.meta.json`` sidecar, returns one `SubagentTranscript` pairing the
+    agent id (the filename segment — verified to equal every record's own
+    ``agentId`` field), the parsed meta dict, and the parsed JSONL event
+    records (file order). A transcript with no meta sidecar, or whose
+    meta/records fail to parse, is skipped rather than raising — same
+    best-effort-forensic-tooling rationale as `load_plan_tasks`. Returns
+    ``[]`` if ``session_dir`` or ``session_dir/subagents`` doesn't exist.
+    """
+    subagents_dir = session_dir / "subagents"
+    if not subagents_dir.is_dir():
+        return []
+    transcripts: list[SubagentTranscript] = []
+    for transcript_path in sorted(subagents_dir.glob("agent-*.jsonl")):
+        agent_id = transcript_path.stem.removeprefix("agent-")
+        meta_path = transcript_path.parent / f"{transcript_path.stem}.meta.json"
+        try:
+            meta = json.loads(meta_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(meta, dict):
+            continue
+        try:
+            lines = transcript_path.read_text().splitlines()
+        except OSError:
+            continue
+        events: list[dict[str, Any]] = []
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                record = json.loads(stripped)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(record, dict):
+                events.append(record)
+        transcripts.append(SubagentTranscript(agent_id=agent_id, meta=meta, events=events))
+    return transcripts
+
+
 def _trace_metadata(first_event: dict[str, Any]) -> dict[str, Any]:
     return {
         key: first_event[key] for key in _TRACE_METADATA_FIELDS if first_event.get(key) is not None
     }
+
+
+def _step_id(event: dict[str, Any], index: int, trace_id: str) -> str:
+    """The step id `_make_step` derives for the `index`-th step of `event`.
+
+    Factored out so `_index_delegation_task_steps` can compute the same id
+    for a Task/Agent tool_use block *before* `steps` exists, without a
+    second, divergence-prone reimplementation of this rule.
+    """
+    uuid = str(event.get("uuid") or f"{trace_id}-{index}")
+    return uuid if index == 0 else f"{uuid}-{index}"
+
+
+def _index_delegation_task_steps(
+    events: list[dict[str, Any]], trace_id: str
+) -> dict[str, tuple[str, str | None]]:
+    """tool_use id -> (owning step id, Task input.prompt), for every
+    Task/Agent tool_use block across `events`.
+
+    This is the join target for `subagents`: a delegate transcript's own
+    ``meta["toolUseId"]`` is looked up here to find which step it flattens
+    under, and `input.prompt` feeds that delegate's declared_intent (D5).
+    """
+    index: dict[str, tuple[str, str | None]] = {}
+    for event in events:
+        if event.get("type") != "assistant":
+            continue
+        tool_uses = [b for b in _content(event) if _block_type(b) == "tool_use"]
+        for i, block in enumerate(tool_uses):
+            if block.get("name") not in _DELEGATION_TOOL_NAMES:
+                continue
+            tool_use_id = block.get("id")
+            if not tool_use_id:
+                continue
+            input_data = block.get("input")
+            prompt = input_data.get("prompt") if isinstance(input_data, dict) else None
+            index[str(tool_use_id)] = (
+                _step_id(event, i, trace_id),
+                prompt if isinstance(prompt, str) else None,
+            )
+    return index
+
+
+def _index_subagents_by_tool_use_id(
+    subagents: list[SubagentTranscript] | None,
+) -> dict[str, SubagentTranscript]:
+    """`meta["toolUseId"] -> SubagentTranscript`, for every transcript with
+    a usable (truthy, string-coercible) toolUseId. A transcript missing
+    that field can't be joined to anything and is dropped here."""
+    by_tool_use_id: dict[str, SubagentTranscript] = {}
+    for transcript in subagents or []:
+        tool_use_id = (
+            transcript.meta.get("toolUseId") if isinstance(transcript.meta, dict) else None
+        )
+        if tool_use_id:
+            by_tool_use_id[str(tool_use_id)] = transcript
+    return by_tool_use_id
+
+
+def _delegate_brief_text(description: str | None, prompt: str | None) -> str | None:
+    """The delegate's own declared-intent seed (D5): `meta["description"]`
+    plus the parent Task's `input.prompt` -- never the parent's own
+    standing plan. Either half may be absent; `None` if both are."""
+    parts = [p for p in (description, prompt) if p]
+    if not parts:
+        return None
+    return "\n\n".join(parts)
+
+
+def _ingest_subagent_transcript(
+    transcript: SubagentTranscript,
+    task_step_id: str,
+    task_prompt: str | None,
+    trace_id: str,
+    strip: bool,
+) -> list[Step]:
+    """Flatten one subagent transcript's own steps into the parent trace.
+
+    Reuses the same per-event step-building path as the parent transcript
+    (`_event_to_steps`/`_assistant_steps`/`_user_steps`) so tool_call/
+    tool_result construction, redaction, and the narration/thinking/anchor
+    declared_intent precedence are identical -- only the anchor seed
+    differs (the delegate's own brief, per `_delegate_brief_text`, in place
+    of the parent's plan_tasks/TaskCreate/TodoWrite reconstruction).
+
+    Every resulting step then gets, per D4 (the approved FLAT shape): its
+    `parent_step_id` overridden to `task_step_id` (not the delegate's own
+    internal parentUuid chain, and not chained to other delegate steps),
+    and `metadata["agent_id"]` set. `trace_id` is passed in as the PARENT
+    trace's own id, so these steps belong to the flattened parent Trace
+    rather than carrying the delegate's own internal `sessionId`.
+    """
+    substantive = [e for e in transcript.events if e.get("type") in _SUBSTANTIVE_TYPES]
+    if not substantive:
+        return []
+
+    description = transcript.meta.get("description") if isinstance(transcript.meta, dict) else None
+    brief = _delegate_brief_text(description if isinstance(description, str) else None, task_prompt)
+
+    steps: list[Step] = []
+    plan = PlanState(standing_plan=brief)
+    for event in substantive:
+        new_steps, plan = _event_to_steps(event, trace_id, strip, plan, frozenset())
+        steps.extend(new_steps)
+
+    for step in steps:
+        step.parent_step_id = task_step_id
+        step.metadata["agent_id"] = transcript.agent_id
+    return steps
 
 
 def _event_to_steps(
@@ -148,9 +357,10 @@ def _event_to_steps(
     trace_id: str,
     strip: bool,
     plan: PlanState,
+    matched_tool_use_ids: frozenset[str],
 ) -> tuple[list[Step], PlanState]:
     if event.get("type") == "assistant":
-        return _assistant_steps(event, trace_id, strip, plan)
+        return _assistant_steps(event, trace_id, strip, plan, matched_tool_use_ids)
     return _user_steps(event, trace_id, strip), plan
 
 
@@ -277,6 +487,7 @@ def _assistant_steps(
     trace_id: str,
     strip: bool,
     plan: PlanState,
+    matched_tool_use_ids: frozenset[str],
 ) -> tuple[list[Step], PlanState]:
     content = _content(event)
     narration = _join_text(content)
@@ -309,8 +520,18 @@ def _assistant_steps(
             payload={"name": block.get("name"), "input": _maybe_redact(block.get("input"), strip)},
         )
         intent = message_intent if i == 0 and message_intent else standing_plan
+        is_delegation = block.get("name") in _DELEGATION_TOOL_NAMES
+        tool_use_id = block.get("id")
+        is_matched = (
+            is_delegation and tool_use_id is not None and str(tool_use_id) in matched_tool_use_ids
+        )
+        # A matched Task/Agent call has a real subagent transcript flattened
+        # in below (see ingest_claude_code_session): the blind spot is
+        # resolved, so the marker is omitted rather than left on. An
+        # unmatched one (no subagents given, or none with this tool_use id)
+        # keeps today's behaviour unchanged.
         step_metadata = (
-            {"delegation_unobserved": True} if block.get("name") in _DELEGATION_TOOL_NAMES else None
+            {"delegation_unobserved": True} if is_delegation and not is_matched else None
         )
         steps.append(
             _make_step(
@@ -356,8 +577,7 @@ def _make_step(
     prev: list[Step] | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> Step:
-    uuid = str(event.get("uuid") or f"{trace_id}-{index}")
-    step_id = uuid if index == 0 else f"{uuid}-{index}"
+    step_id = _step_id(event, index, trace_id)
     if index == 0:
         parent = event.get("parentUuid")
         parent_step_id = str(parent) if parent else None

@@ -53,6 +53,23 @@ def key_gen(
     typer.echo(f"Public key:  {pub_path}")
 
 
+def _discover_sibling_subagents(in_path: Path) -> list[Any]:
+    """Load subagent (delegate) transcripts from
+    ``<in_path.parent>/<in_path.stem>/subagents/`` -- the sibling-directory
+    layout `load_subagent_transcripts` expects (P3/D7). Only meaningful for
+    a ``.jsonl`` parent transcript (the only shape with such a sibling);
+    anything else (e.g. a combined ``.json`` session) has none to look for,
+    so this returns ``[]`` without even trying `load_subagent_transcripts`,
+    which itself already tolerates a missing directory gracefully.
+    """
+    from auditk.adapters.claude_code import load_subagent_transcripts
+
+    if in_path.suffix != ".jsonl":
+        return []
+    session_dir = in_path.parent / in_path.stem
+    return load_subagent_transcripts(session_dir)
+
+
 @app.command()
 def ingest(
     adapter: str = typer.Option(..., help="Adapter name (e.g. claude-code)."),
@@ -62,8 +79,7 @@ def ingest(
 ) -> None:
     """Ingest a raw session file and write a normalised Trace JSON."""
     from auditk.adapters import get_adapter
-    from auditk.adapters.claude_code import ClaudeCodeTraceAdapter
-    from auditk.adapters.protocols import TraceAdapter
+    from auditk.adapters.claude_code import ingest_claude_code_session
 
     in_path = Path(in_file)
     if in_path.suffix == ".jsonl":
@@ -71,13 +87,15 @@ def ingest(
     else:
         events = json.loads(in_path.read_text())
 
-    trace_adapter: TraceAdapter
-    if strip_payloads and adapter == "claude-code":
-        trace_adapter = ClaudeCodeTraceAdapter(strip_payloads=True)
+    if adapter == "claude-code":
+        subagents = _discover_sibling_subagents(in_path)
+        trace = ingest_claude_code_session(
+            events, strip_payloads=strip_payloads, subagents=subagents
+        )
     else:
         trace_adapter = get_adapter(adapter)
+        trace = trace_adapter.ingest(events)
 
-    trace = trace_adapter.ingest(events)
     Path(out).write_text(trace.model_dump_json(indent=2))
     typer.echo(f"Trace written to {out}: {len(trace.steps)} steps")
 
@@ -147,7 +165,8 @@ def report(
 
     if adapter == "claude-code":
         plan_tasks_list = load_plan_tasks(Path(plan_tasks)) if plan_tasks else None
-        trace = ingest_claude_code_session(events, plan_tasks=plan_tasks_list)
+        subagents = _discover_sibling_subagents(in_path)
+        trace = ingest_claude_code_session(events, plan_tasks=plan_tasks_list, subagents=subagents)
 
         # Phase 5 canary (Finding A): refuse to emit a report over a session
         # the adapter may have silently mis-parsed, rather than printing a
