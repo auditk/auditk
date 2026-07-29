@@ -7,7 +7,9 @@ probe, replay, diff remain stubs (Phase 4b).
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -51,6 +53,43 @@ def key_gen(
     typer.echo(f"Public key:  {pub_path}")
 
 
+def _discover_sibling_subagents(in_path: Path) -> list[Any]:
+    """Load subagent (delegate) transcripts from
+    ``<in_path.parent>/<in_path.stem>/subagents/`` -- the sibling-directory
+    layout `load_subagent_transcripts` expects (P3/D7). Only meaningful for
+    a ``.jsonl`` parent transcript (the only shape with such a sibling);
+    anything else (e.g. a combined ``.json`` session) has none to look for,
+    so this returns ``[]`` without even trying `load_subagent_transcripts`,
+    which itself already tolerates a missing directory gracefully.
+    """
+    from auditk.adapters.claude_code import load_subagent_transcripts
+
+    if in_path.suffix != ".jsonl":
+        return []
+    session_dir = in_path.parent / in_path.stem
+    return load_subagent_transcripts(session_dir)
+
+
+def _to_subagent_health_inputs(transcripts: list[Any]) -> list[Any]:
+    """Convert already-loaded `SubagentTranscript`s (P3) into
+    `SubagentHealthInput`s (P4) so the adapter-health canary's
+    unknown-record-type-share check also runs over each subagent's own
+    events, not just the parent transcript's.
+
+    Known limitation: only transcripts `load_subagent_transcripts` already
+    loaded successfully reach here. A `subagents/` layout break (an
+    `agent-*.jsonl` with no `meta.json`, or a `meta.json` missing
+    `toolUseId`) is exactly what that function silently drops today rather
+    than surfacing -- so `has_meta`/`has_tool_use_id` breach detection is
+    exercised by this module's own tests, but not yet reachable from a real
+    on-disk corpus via this conversion. Surfacing on-disk load failures
+    (not just their absence) is a further increment.
+    """
+    from auditk.adapters.health import SubagentHealthInput
+
+    return [SubagentHealthInput(agent_id=t.agent_id, events=t.events) for t in transcripts]
+
+
 @app.command()
 def ingest(
     adapter: str = typer.Option(..., help="Adapter name (e.g. claude-code)."),
@@ -60,8 +99,7 @@ def ingest(
 ) -> None:
     """Ingest a raw session file and write a normalised Trace JSON."""
     from auditk.adapters import get_adapter
-    from auditk.adapters.claude_code import ClaudeCodeTraceAdapter
-    from auditk.adapters.protocols import TraceAdapter
+    from auditk.adapters.claude_code import ingest_claude_code_session
 
     in_path = Path(in_file)
     if in_path.suffix == ".jsonl":
@@ -69,13 +107,15 @@ def ingest(
     else:
         events = json.loads(in_path.read_text())
 
-    trace_adapter: TraceAdapter
-    if strip_payloads and adapter == "claude-code":
-        trace_adapter = ClaudeCodeTraceAdapter(strip_payloads=True)
+    if adapter == "claude-code":
+        subagents = _discover_sibling_subagents(in_path)
+        trace = ingest_claude_code_session(
+            events, strip_payloads=strip_payloads, subagents=subagents
+        )
     else:
         trace_adapter = get_adapter(adapter)
+        trace = trace_adapter.ingest(events)
 
-    trace = trace_adapter.ingest(events)
     Path(out).write_text(trace.model_dump_json(indent=2))
     typer.echo(f"Trace written to {out}: {len(trace.steps)} steps")
 
@@ -110,10 +150,20 @@ def report(
         "--no-policy-context",
         help="Skip CLAUDE.md policy-context discovery (for portability/privacy).",
     ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help=(
+            "Emit the report even if the adapter-health check reports a breach "
+            "(claude-code adapter only). Without this, a breach refuses to emit "
+            "a report at all -- see 'auditk doctor'."
+        ),
+    ),
 ) -> None:
     """Produce a single-session post-mortem report (markdown or JSON)."""
     from auditk.adapters import get_adapter
     from auditk.adapters.claude_code import ingest_claude_code_session, load_plan_tasks
+    from auditk.adapters.health import SessionHealthInput, check_adapter_health
     from auditk.analysis.findings import analyze_trace
     from auditk.analysis.policy_context import discover_policy_context
     from auditk.analysis.report import build_report, render_markdown
@@ -135,7 +185,30 @@ def report(
 
     if adapter == "claude-code":
         plan_tasks_list = load_plan_tasks(Path(plan_tasks)) if plan_tasks else None
-        trace = ingest_claude_code_session(events, plan_tasks=plan_tasks_list)
+        subagents = _discover_sibling_subagents(in_path)
+        trace = ingest_claude_code_session(events, plan_tasks=plan_tasks_list, subagents=subagents)
+
+        # Phase 5 canary (Finding A): refuse to emit a report over a session
+        # the adapter may have silently mis-parsed, rather than printing a
+        # confidently wrong drift score/report. See `auditk doctor` for the
+        # corpus-level version of this check.
+        health = check_adapter_health(
+            [
+                SessionHealthInput(
+                    events=events,
+                    has_plan_store=bool(plan_tasks_list),
+                    subagents=_to_subagent_health_inputs(subagents),
+                )
+            ]
+        )
+        if not health.ok and not force:
+            typer.echo(
+                "Error: adapter health check failed -- refusing to emit a report "
+                "(pass --force to override):"
+            )
+            for breach in health.breaches:
+                typer.echo(f"  - {breach}")
+            raise typer.Exit(1)
     else:
         trace_adapter = get_adapter(adapter)
         trace = trace_adapter.ingest(events)
@@ -168,6 +241,98 @@ def report(
         typer.echo(f"Report written to {out}")
     else:
         typer.echo(content)
+
+
+def _load_corpus_sessions(
+    root_path: Path, tasks_root_path: Path, anchor_tool_names: tuple[str, ...]
+) -> tuple[list[Any], Counter[str]]:
+    """Walk `root_path` and load every session transcript into a
+    `SessionHealthInput` list, plus the plan-anchor tool-call histogram
+    across all of them. Unreadable transcripts are skipped (best-effort
+    forensic tooling; see `corpus_walk.iter_jsonl`).
+
+    Built entirely from `auditk.analysis.corpus_walk`'s shared
+    corpus-walking primitives -- the single source of truth also used by
+    `scripts/corpus_stats.py`, so the two never drift out of sync on how
+    the on-disk corpus layout is discovered or parsed.
+    """
+    from auditk.adapters.claude_code import load_subagent_transcripts
+    from auditk.adapters.health import SessionHealthInput
+    from auditk.analysis.corpus_walk import (
+        count_tool_calls,
+        discover_sessions,
+        has_plan_store,
+        iter_jsonl,
+    )
+
+    sessions: list[SessionHealthInput] = []
+    histogram: Counter[str] = Counter()
+
+    for session_paths in discover_sessions(root_path):
+        try:
+            events = iter_jsonl(session_paths.transcript)
+        except OSError:
+            continue
+        histogram.update(count_tool_calls(events, anchor_tool_names))
+        subagent_transcripts = (
+            load_subagent_transcripts(session_paths.session_dir)
+            if session_paths.session_dir is not None
+            else []
+        )
+        sessions.append(
+            SessionHealthInput(
+                events=events,
+                session_id=session_paths.session_id,
+                has_plan_store=has_plan_store(tasks_root_path, session_paths.session_id),
+                subagents=_to_subagent_health_inputs(subagent_transcripts),
+            )
+        )
+    return sessions, histogram
+
+
+@app.command()
+def doctor(
+    root: str = typer.Option(
+        str(Path.home() / ".claude" / "projects"),
+        "--root",
+        help="Corpus root to walk, read-only (default: ~/.claude/projects).",
+    ),
+    tasks_root: str = typer.Option(
+        str(Path.home() / ".claude" / "tasks"),
+        "--tasks-root",
+        help="Persisted plan-store root, read-only (default: ~/.claude/tasks).",
+    ),
+) -> None:
+    """Run the adapter-health corpus-level invariant over a corpus root.
+
+    Prints the plan-anchor (TodoWrite/TaskCreate/TaskUpdate) tool-call
+    histogram plus persisted-plan-store coverage, then the overall health
+    verdict. Read-only: nothing under --root or --tasks-root is written to.
+    Exits non-zero if the corpus-level invariant (or any per-session check)
+    breaches.
+    """
+    from auditk.adapters.health import PLAN_ANCHOR_TOOL_NAMES, check_adapter_health
+
+    sessions, anchor_histogram = _load_corpus_sessions(
+        Path(root), Path(tasks_root), PLAN_ANCHOR_TOOL_NAMES
+    )
+    health = check_adapter_health(sessions)
+
+    typer.echo(f"Sessions discovered: {len(sessions)}")
+    typer.echo("Plan-anchor tool-call histogram:")
+    for tool in PLAN_ANCHOR_TOOL_NAMES:
+        typer.echo(f"  {tool:<12} {anchor_histogram.get(tool, 0)}")
+    sessions_with_plan_store = sum(1 for s in sessions if s.has_plan_store)
+    typer.echo(f"  sessions with persisted plan store: {sessions_with_plan_store}")
+    typer.echo("")
+
+    if health.ok:
+        typer.echo("Adapter health: OK")
+    else:
+        typer.echo("Adapter health: BREACH")
+        for breach in health.breaches:
+            typer.echo(f"  - {breach}")
+        raise typer.Exit(1)
 
 
 @app.command()
