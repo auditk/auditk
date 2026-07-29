@@ -7,7 +7,9 @@ probe, replay, diff remain stubs (Phase 4b).
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -110,10 +112,20 @@ def report(
         "--no-policy-context",
         help="Skip CLAUDE.md policy-context discovery (for portability/privacy).",
     ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help=(
+            "Emit the report even if the adapter-health check reports a breach "
+            "(claude-code adapter only). Without this, a breach refuses to emit "
+            "a report at all -- see 'auditk doctor'."
+        ),
+    ),
 ) -> None:
     """Produce a single-session post-mortem report (markdown or JSON)."""
     from auditk.adapters import get_adapter
     from auditk.adapters.claude_code import ingest_claude_code_session, load_plan_tasks
+    from auditk.adapters.health import SessionHealthInput, check_adapter_health
     from auditk.analysis.findings import analyze_trace
     from auditk.analysis.policy_context import discover_policy_context
     from auditk.analysis.report import build_report, render_markdown
@@ -136,6 +148,22 @@ def report(
     if adapter == "claude-code":
         plan_tasks_list = load_plan_tasks(Path(plan_tasks)) if plan_tasks else None
         trace = ingest_claude_code_session(events, plan_tasks=plan_tasks_list)
+
+        # Phase 5 canary (Finding A): refuse to emit a report over a session
+        # the adapter may have silently mis-parsed, rather than printing a
+        # confidently wrong drift score/report. See `auditk doctor` for the
+        # corpus-level version of this check.
+        health = check_adapter_health(
+            [SessionHealthInput(events=events, has_plan_store=bool(plan_tasks_list))]
+        )
+        if not health.ok and not force:
+            typer.echo(
+                "Error: adapter health check failed -- refusing to emit a report "
+                "(pass --force to override):"
+            )
+            for breach in health.breaches:
+                typer.echo(f"  - {breach}")
+            raise typer.Exit(1)
     else:
         trace_adapter = get_adapter(adapter)
         trace = trace_adapter.ingest(events)
@@ -168,6 +196,148 @@ def report(
         typer.echo(f"Report written to {out}")
     else:
         typer.echo(content)
+
+
+def _iter_jsonl_records(path: Path) -> list[dict[str, Any]]:
+    """Read a JSONL file into parsed dict records, skipping blank/malformed
+    lines rather than raising (same rationale as
+    `adapters.claude_code.load_plan_tasks`: best-effort forensic tooling
+    reading files a third-party harness controls)."""
+    records: list[dict[str, Any]] = []
+    for line in path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            record = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(record, dict):
+            records.append(record)
+    return records
+
+
+def _discover_corpus_session_transcripts(root: Path) -> list[tuple[str, Path]]:
+    """(session_id, transcript_path) pairs under `root/<project-slug>/<uuid>.jsonl`.
+
+    Mirrors `scripts/corpus_stats.py:discover_sessions`'s on-disk-layout
+    handling (session id = transcript filename stem). Duplicated rather than
+    imported: `scripts/` is not part of the installed package (see
+    pyproject.toml's `packages = ["src/auditk"]`), so it is not cleanly
+    importable from library/CLI code -- only reachable at all when the repo
+    checkout happens to be on `sys.path`, which does not hold for an
+    installed `auditk`.
+    """
+    if not root.is_dir():
+        return []
+    sessions: list[tuple[str, Path]] = []
+    for project_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+        for transcript in sorted(project_dir.glob("*.jsonl")):
+            sessions.append((transcript.stem, transcript))
+    return sessions
+
+
+def _has_persisted_plan_store(tasks_root: Path, session_id: str) -> bool:
+    """Mirrors `scripts/corpus_stats.py:has_plan_store` (see
+    `_discover_corpus_session_transcripts` docstring for why this is
+    duplicated rather than imported)."""
+    session_dir = tasks_root / session_id
+    if not session_dir.is_dir():
+        return False
+    return any(session_dir.glob("*.json"))
+
+
+def _tally_plan_anchor_tool_calls(
+    events: list[dict[str, Any]], histogram: Counter[str], anchor_tool_names: tuple[str, ...]
+) -> None:
+    """Add this session's plan-anchor tool_use calls into `histogram` (mutated in place)."""
+    for event in events:
+        if event.get("type") != "assistant":
+            continue
+        message = event.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
+                continue
+            name = block.get("name")
+            if name in anchor_tool_names:
+                histogram[str(name)] += 1
+
+
+def _load_corpus_sessions(
+    root_path: Path, tasks_root_path: Path, anchor_tool_names: tuple[str, ...]
+) -> tuple[list[Any], Counter[str]]:
+    """Walk `root_path` and load every session transcript into a
+    `SessionHealthInput` list, plus the plan-anchor tool-call histogram
+    across all of them. Unreadable transcripts are skipped (best-effort
+    forensic tooling; see `_iter_jsonl_records`)."""
+    from auditk.adapters.health import SessionHealthInput
+
+    session_transcripts = _discover_corpus_session_transcripts(root_path)
+    sessions: list[SessionHealthInput] = []
+    histogram: Counter[str] = Counter()
+
+    for session_id, transcript in session_transcripts:
+        try:
+            events = _iter_jsonl_records(transcript)
+        except OSError:
+            continue
+        _tally_plan_anchor_tool_calls(events, histogram, anchor_tool_names)
+        sessions.append(
+            SessionHealthInput(
+                events=events,
+                session_id=session_id,
+                has_plan_store=_has_persisted_plan_store(tasks_root_path, session_id),
+            )
+        )
+    return sessions, histogram
+
+
+@app.command()
+def doctor(
+    root: str = typer.Option(
+        str(Path.home() / ".claude" / "projects"),
+        "--root",
+        help="Corpus root to walk, read-only (default: ~/.claude/projects).",
+    ),
+    tasks_root: str = typer.Option(
+        str(Path.home() / ".claude" / "tasks"),
+        "--tasks-root",
+        help="Persisted plan-store root, read-only (default: ~/.claude/tasks).",
+    ),
+) -> None:
+    """Run the adapter-health corpus-level invariant over a corpus root.
+
+    Prints the plan-anchor (TodoWrite/TaskCreate/TaskUpdate) tool-call
+    histogram plus persisted-plan-store coverage, then the overall health
+    verdict. Read-only: nothing under --root or --tasks-root is written to.
+    Exits non-zero if the corpus-level invariant (or any per-session check)
+    breaches.
+    """
+    from auditk.adapters.health import PLAN_ANCHOR_TOOL_NAMES, check_adapter_health
+
+    sessions, anchor_histogram = _load_corpus_sessions(
+        Path(root), Path(tasks_root), PLAN_ANCHOR_TOOL_NAMES
+    )
+    health = check_adapter_health(sessions)
+
+    typer.echo(f"Sessions discovered: {len(sessions)}")
+    typer.echo("Plan-anchor tool-call histogram:")
+    for tool in PLAN_ANCHOR_TOOL_NAMES:
+        typer.echo(f"  {tool:<12} {anchor_histogram.get(tool, 0)}")
+    sessions_with_plan_store = sum(1 for s in sessions if s.has_plan_store)
+    typer.echo(f"  sessions with persisted plan store: {sessions_with_plan_store}")
+    typer.echo("")
+
+    if health.ok:
+        typer.echo("Adapter health: OK")
+    else:
+        typer.echo("Adapter health: BREACH")
+        for breach in health.breaches:
+            typer.echo(f"  - {breach}")
+        raise typer.Exit(1)
 
 
 @app.command()

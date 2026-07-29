@@ -76,17 +76,24 @@ def _untyped_record(record_type: str) -> dict[str, Any]:
 
 def _breaching_session_events() -> list[dict[str, Any]]:
     """A single session that ingests fine (has substantive user/assistant
-    events) but breaches the per-session unhandled-record-type-share check:
-    2 substantive records out of 6 total, i.e. 4/6 = ~66.7% unhandled --
-    well over the 5% floor. No plan-anchor tool calls needed: this is a
-    per-session check, which applies even to a single session (D1)."""
+    events) but breaches the per-session unknown-record-type-share check:
+    2 substantive records out of 6 total carry a genuinely UNRECOGNISED
+    type (not in `KNOWN_RECORD_TYPES` -- see the RED-gate correction), i.e.
+    4/6 = ~66.7% unknown, well over the 5% floor. No plan-anchor tool calls
+    needed: this is a per-session check, which applies even to a single
+    session (D1).
+
+    Deliberately does NOT use known-benign types like `attachment`/`system`
+    here -- those are in `KNOWN_RECORD_TYPES` by default and must NOT
+    breach (see test_adapter_health.py's
+    TestPerSessionUnknownRecordTypeShare for that coverage)."""
     return [
         _user_text("hello"),
         _assistant_text("hi there"),
-        _untyped_record("attachment"),
-        _untyped_record("attachment"),
-        _untyped_record("system"),
-        _untyped_record("system"),
+        _untyped_record("totally-new-type-v9"),
+        _untyped_record("totally-new-type-v9"),
+        _untyped_record("another-unknown-type"),
+        _untyped_record("another-unknown-type"),
     ]
 
 
@@ -198,11 +205,15 @@ def _build_corpus(
 
 
 class TestDoctorSubcommand:
-    def test_doctor_is_not_a_registered_command_yet(self) -> None:
-        # Cheapest possible check that the subcommand doesn't exist: it's
-        # absent from the app's own --help listing.
+    def test_doctor_is_a_registered_command(self) -> None:
+        # GREEN-phase update (Test Integrity Rule): at RED this asserted
+        # "doctor" was ABSENT from --help, which was correct before this
+        # phase's production code landed. Now that `doctor` is a real
+        # `@app.command()` in cli.py, that assumption is (by design)
+        # invalidated -- the test's premise changed, not its subject, so the
+        # assertion is flipped rather than deleted.
         result = runner.invoke(app, ["--help"])
-        assert "doctor" not in result.output
+        assert "doctor" in result.output
 
     def test_doctor_exits_zero_and_prints_histogram_for_healthy_corpus(
         self, tmp_path: Path

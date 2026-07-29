@@ -290,13 +290,42 @@ class TestPerSessionToolCallResultPairing:
         # A single session, far below the corpus-level threshold, still
         # gets the cheap per-session pairing check (D1: "per-session checks
         # are limited to the cheap structural ones needing no magic
-        # number" -- these are not gated on corpus size).
+        # number" -- these are not gated on corpus size). Uses a genuinely
+        # orphaned call (see test_single_trailing_in_flight_call_does_not_breach
+        # just below for why a merely-trailing unresolved call must NOT
+        # qualify here).
         events = [
             _assistant_tool_use(("Read", {"file_path": "/a"})),
-            # No tool_result at all for the Read call.
+            # The Read's result never arrives -- but the session carries on
+            # with a full, separately-resolved round trip afterward, so
+            # this is not "the capture just ended mid-call": something else
+            # happened while the Read's result was silently dropped.
+            _assistant_tool_use(("Bash", {"command": "echo hi"})),
+            _user_tool_results(1),
         ]
         result = check_adapter_health([SessionHealthInput(events=events)])
         assert result.ok is False
+
+    def test_single_trailing_in_flight_call_does_not_breach(self) -> None:
+        # GREEN-phase correction (Test Integrity Rule): this test originally
+        # asserted that a session consisting of ONE unresolved tool call
+        # breaches on its own. That turned out to be a false-positive-prone
+        # reading of "pairing": a transcript legitimately ends mid-call all
+        # the time (harness killed, session closed, capture truncated) --
+        # and a real "clean" fixture used across several other test modules
+        # (tests/fixtures/claude_code/session_modern_taskcreate.jsonl, whose
+        # own docstring calls it "a clean session with zero HIGH/MEDIUM
+        # findings") ends in exactly this shape. Wiring the original,
+        # trailing-intolerant check into `auditk report` made that
+        # already-passing, already-"clean"-labelled fixture fail health with
+        # a false "tool-call/tool-result mismatch" breach. The check (and
+        # this test) were corrected together: a merely-trailing unresolved
+        # call is not the "adapter dropped a result" signal this exists to
+        # catch (see `_trailing_in_flight_call_count`'s docstring) -- only
+        # an orphaned one (covered by the test just above) is.
+        events = [_assistant_tool_use(("Read", {"file_path": "/a"}))]
+        result = check_adapter_health([SessionHealthInput(events=events)])
+        assert result.ok is True
 
 
 # --- D1(c): per-session UNKNOWN-record-type share -------------------------
