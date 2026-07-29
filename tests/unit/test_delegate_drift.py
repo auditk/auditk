@@ -245,8 +245,22 @@ class TestComputeDelegateDrift:
 
     def test_per_agent_score_is_isolated_not_blended_across_agents(self) -> None:
         # If AAA's two steps were blended with BBB's, AAA's score would
-        # differ from scoring AAA's steps alone in a standalone trace.
+        # differ from scoring AAA's steps alone.
+        #
+        # GREEN-phase correction (Test Integrity Rule): the reference
+        # ("isolated") score below is computed via the raw scorer
+        # (`get_scorer(...).score(...)`), NOT via `compute_drift` -- since
+        # `compute_drift` itself now excludes every `agent_id`-tagged step
+        # (D6), calling it on a trace made ENTIRELY of AAA's own
+        # (agent_id="AAA") steps would strip them all and always return the
+        # scorer's "nothing to score" fallback (0.0), regardless of their
+        # actual content. That's `compute_drift` behaving exactly as
+        # specified, not a bug -- the test's own reference computation was
+        # what needed fixing, to ask the raw scorer directly for "what would
+        # scoring just AAA's steps produce", independent of the exclusion
+        # wrapper being tested here.
         from auditk.analysis.drift import compute_delegate_drift
+        from auditk.analysis.scorers import DEFAULT_SCORER, get_scorer
 
         aaa_steps = [
             _well_aligned_step("d-aaa-1", agent_id="AAA"),
@@ -258,7 +272,7 @@ class TestComputeDelegateDrift:
         isolated_aaa_trace = _make_trace(aaa_steps)
 
         combined_result = compute_delegate_drift(combined_trace)
-        isolated_report = compute_drift(isolated_aaa_trace)
+        isolated_report = get_scorer(DEFAULT_SCORER).score(isolated_aaa_trace)
 
         assert combined_result["AAA"].drift_score == isolated_report.drift_score
 

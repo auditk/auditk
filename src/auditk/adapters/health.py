@@ -94,17 +94,42 @@ DEFAULT_MAX_UNHANDLED_TYPE_SHARE = 0.05
 
 
 @dataclass
+class SubagentHealthInput:
+    """One `agent-*.jsonl` candidate found under a session's `subagents/`
+    directory, for `check_adapter_health` to evaluate -- successfully
+    loadable by `load_subagent_transcripts` or not.
+
+    `has_meta`/`has_tool_use_id` model the two failure modes
+    `load_subagent_transcripts` (`adapters/claude_code.py`, P3) currently
+    tolerates silently rather than raising: an `agent-*.jsonl` with no
+    sidecar `.meta.json` at all, or a `.meta.json` present but missing the
+    `toolUseId` join key. Both are a broken `subagents/` layout -- the same
+    kind of format drift the parent-transcript canary already exists to
+    catch, just one directory level deeper.
+    """
+
+    agent_id: str
+    events: list[dict[str, Any]] = field(default_factory=list)
+    has_meta: bool = True
+    has_tool_use_id: bool = True
+
+
+@dataclass
 class SessionHealthInput:
     """One session's raw parsed JSONL event dicts, plus what's known about
-    its persisted plan store, for `check_adapter_health` to evaluate.
+    its persisted plan store and its subagent (delegate) transcripts, for
+    `check_adapter_health` to evaluate.
 
     `session_id` is used only to label breach messages; when absent, the
-    session's position in the input list is used instead.
+    session's position in the input list is used instead. `subagents`
+    defaults to `[]`, so any existing caller/test built before P4 (which
+    never mentions subagents at all) is completely unaffected.
     """
 
     events: list[dict[str, Any]]
     session_id: str | None = None
     has_plan_store: bool = False
+    subagents: list[SubagentHealthInput] = field(default_factory=list)
 
 
 @dataclass
@@ -203,6 +228,44 @@ def _trailing_in_flight_call_count(events: list[dict[str, Any]]) -> int:
     return trailing
 
 
+def _check_subagent(
+    label: str,
+    subagent: SubagentHealthInput,
+    *,
+    max_unhandled_type_share: float,
+    handled_record_types: frozenset[str],
+) -> list[str]:
+    """Breach(es) for one subagent transcript candidate.
+
+    A broken `subagents/` layout (no `meta.json`, or a `meta.json` missing
+    `toolUseId`) is checked first and, if present, is the ONLY breach
+    reported for this subagent -- there's no reliable joined identity left
+    to also run a content check against, and reporting both would just be
+    noise on top of the one real signal. Only when the layout itself is
+    clean does the SAME unknown-record-type-share check already used for
+    parent transcripts run against this subagent's own events.
+    """
+    if not subagent.has_meta:
+        return [
+            f"{label}: subagent {subagent.agent_id} has no meta.json "
+            "(broken subagents/ layout -- load_subagent_transcripts would skip it)"
+        ]
+    if not subagent.has_tool_use_id:
+        return [
+            f"{label}: subagent {subagent.agent_id} has a meta.json but it is missing "
+            "toolUseId (broken subagents/ layout -- cannot join it to its parent Task step)"
+        ]
+
+    share, unknown, total = _session_unknown_type_share(subagent.events, handled_record_types)
+    if total > 0 and share > max_unhandled_type_share:
+        return [
+            f"{label}: subagent {subagent.agent_id} unhandled/unknown record type share "
+            f"{share:.1%} ({unknown}/{total} records) exceeds the "
+            f"{max_unhandled_type_share:.0%} threshold"
+        ]
+    return []
+
+
 def _check_session(
     index: int,
     session: SessionHealthInput,
@@ -210,7 +273,11 @@ def _check_session(
     max_unhandled_type_share: float,
     handled_record_types: frozenset[str],
 ) -> list[str]:
-    """The two cheap, corpus-size-independent per-session structural checks."""
+    """The cheap, corpus-size-independent per-session structural checks:
+    (a) tool-call/tool-result pairing, (b) unknown-record-type share, both
+    over the parent transcript's own events, and (c) the same checks
+    (layout + unknown-type-share) over each of this session's subagent
+    transcripts, if any."""
     label = _session_label(index, session)
     breaches: list[str] = []
 
@@ -231,6 +298,17 @@ def _check_session(
             f"{label}: unhandled/unknown record type share {share:.1%} "
             f"({unknown}/{total} records) exceeds the {max_unhandled_type_share:.0%} threshold"
         )
+
+    for subagent in session.subagents:
+        breaches.extend(
+            _check_subagent(
+                label,
+                subagent,
+                max_unhandled_type_share=max_unhandled_type_share,
+                handled_record_types=handled_record_types,
+            )
+        )
+
     return breaches
 
 

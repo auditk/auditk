@@ -70,6 +70,26 @@ def _discover_sibling_subagents(in_path: Path) -> list[Any]:
     return load_subagent_transcripts(session_dir)
 
 
+def _to_subagent_health_inputs(transcripts: list[Any]) -> list[Any]:
+    """Convert already-loaded `SubagentTranscript`s (P3) into
+    `SubagentHealthInput`s (P4) so the adapter-health canary's
+    unknown-record-type-share check also runs over each subagent's own
+    events, not just the parent transcript's.
+
+    Known limitation: only transcripts `load_subagent_transcripts` already
+    loaded successfully reach here. A `subagents/` layout break (an
+    `agent-*.jsonl` with no `meta.json`, or a `meta.json` missing
+    `toolUseId`) is exactly what that function silently drops today rather
+    than surfacing -- so `has_meta`/`has_tool_use_id` breach detection is
+    exercised by this module's own tests, but not yet reachable from a real
+    on-disk corpus via this conversion. Surfacing on-disk load failures
+    (not just their absence) is a further increment.
+    """
+    from auditk.adapters.health import SubagentHealthInput
+
+    return [SubagentHealthInput(agent_id=t.agent_id, events=t.events) for t in transcripts]
+
+
 @app.command()
 def ingest(
     adapter: str = typer.Option(..., help="Adapter name (e.g. claude-code)."),
@@ -173,7 +193,13 @@ def report(
         # confidently wrong drift score/report. See `auditk doctor` for the
         # corpus-level version of this check.
         health = check_adapter_health(
-            [SessionHealthInput(events=events, has_plan_store=bool(plan_tasks_list))]
+            [
+                SessionHealthInput(
+                    events=events,
+                    has_plan_store=bool(plan_tasks_list),
+                    subagents=_to_subagent_health_inputs(subagents),
+                )
+            ]
         )
         if not health.ok and not force:
             typer.echo(
@@ -230,6 +256,7 @@ def _load_corpus_sessions(
     `scripts/corpus_stats.py`, so the two never drift out of sync on how
     the on-disk corpus layout is discovered or parsed.
     """
+    from auditk.adapters.claude_code import load_subagent_transcripts
     from auditk.adapters.health import SessionHealthInput
     from auditk.analysis.corpus_walk import (
         count_tool_calls,
@@ -247,11 +274,17 @@ def _load_corpus_sessions(
         except OSError:
             continue
         histogram.update(count_tool_calls(events, anchor_tool_names))
+        subagent_transcripts = (
+            load_subagent_transcripts(session_paths.session_dir)
+            if session_paths.session_dir is not None
+            else []
+        )
         sessions.append(
             SessionHealthInput(
                 events=events,
                 session_id=session_paths.session_id,
                 has_plan_store=has_plan_store(tasks_root_path, session_paths.session_id),
+                subagents=_to_subagent_health_inputs(subagent_transcripts),
             )
         )
     return sessions, histogram
