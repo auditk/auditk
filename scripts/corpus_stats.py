@@ -21,7 +21,8 @@ that holds ``subagents/`` — both live directly under
 ``<root>/<project-slug>/``. A naive ``**/*.jsonl`` glob from the project
 directory finds both parent and subagent transcripts with no way to tell
 them apart by path shape alone; this module discovers the sibling directory
-explicitly instead.
+explicitly instead (see ``auditk.analysis.corpus_walk``, this script's
+shared corpus-walking dependency, for exactly how).
 
 Usage:
     python scripts/corpus_stats.py [--root PATH] [--tasks-root PATH] [--json]
@@ -32,28 +33,52 @@ from __future__ import annotations
 import argparse
 import json
 from collections import Counter
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-DEFAULT_ROOT = Path.home() / ".claude" / "projects"
-DEFAULT_TASKS_ROOT = Path.home() / ".claude" / "tasks"
+# `scripts/` is not part of the installed package (see pyproject.toml's
+# `packages = ["src/auditk"]`), so it cannot be imported *from* -- but the
+# reverse direction works fine: `auditk` is an installed (editable) package,
+# resolvable via normal import machinery regardless of this script's own
+# location or invocation cwd, exactly like any other script that depends on
+# an installed library.
+from auditk.analysis.corpus_walk import (
+    DEFAULT_ROOT,
+    DEFAULT_TASKS_ROOT,
+    SessionPaths,
+    count_record_types,
+    count_tool_calls,
+    discover_sessions,
+    discover_subagent_transcripts,
+    has_plan_store,
+    iter_jsonl,
+)
+
+# Re-exported so this module's existing surface (what `tests/unit/
+# test_corpus_stats.py` imports as `corpus_stats.iter_jsonl`,
+# `corpus_stats.discover_sessions`, etc.) is unchanged even though the
+# implementations now live in auditk.analysis.corpus_walk -- the single
+# source of truth shared with `auditk doctor` (cli.py).
+__all__ = [
+    "SessionPaths",
+    "iter_jsonl",
+    "discover_sessions",
+    "discover_subagent_transcripts",
+    "has_plan_store",
+    "count_record_types",
+    "count_tool_calls",
+    "CorpusStats",
+    "compute_corpus_stats",
+    "stats_to_dict",
+    "format_report",
+    "main",
+]
 
 # Tool names that anchor the adapter's "standing plan" (see
 # adapters/claude_code.py module docstring): the legacy TodoWrite anchor and
 # the modern TaskCreate/TaskUpdate pair.
 _PLAN_ANCHOR_TOOLS = ("TodoWrite", "TaskCreate", "TaskUpdate")
-
-
-@dataclass(frozen=True)
-class SessionPaths:
-    """A parent transcript plus its sibling session directory, if any."""
-
-    session_id: str
-    project_slug: str
-    transcript: Path
-    session_dir: Path | None
 
 
 @dataclass
@@ -67,111 +92,6 @@ class CorpusStats:
     sessions_with_subagents: int = 0
     delegate_tool_counts: Counter[str] = field(default_factory=Counter)
     unreadable_transcripts: list[str] = field(default_factory=list)
-
-
-def iter_jsonl(path: Path) -> list[dict[str, Any]]:
-    """Read a JSONL file into a list of parsed dict records.
-
-    Lines that are blank, not valid JSON, or not a JSON object are skipped
-    rather than raising — this is best-effort forensic tooling reading files
-    a third-party harness controls, not a producer we can validate at write
-    time (same rationale as `adapters.claude_code.load_plan_tasks`).
-    """
-    records: list[dict[str, Any]] = []
-    with path.open(encoding="utf-8") as fh:
-        for line in fh:
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                record = json.loads(stripped)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(record, dict):
-                records.append(record)
-    return records
-
-
-def discover_sessions(root: Path) -> list[SessionPaths]:
-    """Find parent `<uuid>.jsonl` transcripts under `root/<project-slug>/`.
-
-    Pairs each transcript with its sibling `<uuid>/` directory (which may
-    hold `subagents/`) when one exists on disk.
-    """
-    if not root.is_dir():
-        return []
-    sessions: list[SessionPaths] = []
-    for project_dir in sorted(p for p in root.iterdir() if p.is_dir()):
-        for transcript in sorted(project_dir.glob("*.jsonl")):
-            session_id = transcript.stem
-            sibling_dir = project_dir / session_id
-            sessions.append(
-                SessionPaths(
-                    session_id=session_id,
-                    project_slug=project_dir.name,
-                    transcript=transcript,
-                    session_dir=sibling_dir if sibling_dir.is_dir() else None,
-                )
-            )
-    return sessions
-
-
-def discover_subagent_transcripts(session_dir: Path) -> list[Path]:
-    """Find `agent-*.jsonl` subagent transcripts under a session's sibling dir."""
-    subagents_dir = session_dir / "subagents"
-    if not subagents_dir.is_dir():
-        return []
-    return sorted(subagents_dir.glob("agent-*.jsonl"))
-
-
-def has_plan_store(tasks_root: Path, session_id: str) -> bool:
-    """Whether the persisted plan store `<tasks_root>/<session_id>/` exists
-    and holds at least one task file."""
-    session_task_dir = tasks_root / session_id
-    if not session_task_dir.is_dir():
-        return False
-    return any(session_task_dir.glob("*.json"))
-
-
-def count_record_types(records: Iterable[dict[str, Any]]) -> Counter[str]:
-    """Pure: count the `type` field across an iterable of parsed records."""
-    counts: Counter[str] = Counter()
-    for record in records:
-        record_type = record.get("type")
-        if record_type is not None:
-            counts[str(record_type)] += 1
-    return counts
-
-
-def count_tool_calls(
-    records: Iterable[dict[str, Any]], names: Iterable[str] | None = None
-) -> Counter[str]:
-    """Pure: count `tool_use` block names inside `assistant` message records.
-
-    If `names` is given, only those tool names are counted; otherwise every
-    tool_use block's name is counted. Non-assistant records and malformed
-    message/content shapes are ignored rather than raising.
-    """
-    wanted = set(names) if names is not None else None
-    counts: Counter[str] = Counter()
-    for record in records:
-        if record.get("type") != "assistant":
-            continue
-        message = record.get("message")
-        content = message.get("content") if isinstance(message, dict) else None
-        if not isinstance(content, list):
-            continue
-        for block in content:
-            if not isinstance(block, dict) or block.get("type") != "tool_use":
-                continue
-            name = block.get("name")
-            if name is None:
-                continue
-            name_str = str(name)
-            if wanted is not None and name_str not in wanted:
-                continue
-            counts[name_str] += 1
-    return counts
 
 
 def compute_corpus_stats(

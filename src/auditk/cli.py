@@ -198,98 +198,41 @@ def report(
         typer.echo(content)
 
 
-def _iter_jsonl_records(path: Path) -> list[dict[str, Any]]:
-    """Read a JSONL file into parsed dict records, skipping blank/malformed
-    lines rather than raising (same rationale as
-    `adapters.claude_code.load_plan_tasks`: best-effort forensic tooling
-    reading files a third-party harness controls)."""
-    records: list[dict[str, Any]] = []
-    for line in path.read_text().splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        try:
-            record = json.loads(stripped)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(record, dict):
-            records.append(record)
-    return records
-
-
-def _discover_corpus_session_transcripts(root: Path) -> list[tuple[str, Path]]:
-    """(session_id, transcript_path) pairs under `root/<project-slug>/<uuid>.jsonl`.
-
-    Mirrors `scripts/corpus_stats.py:discover_sessions`'s on-disk-layout
-    handling (session id = transcript filename stem). Duplicated rather than
-    imported: `scripts/` is not part of the installed package (see
-    pyproject.toml's `packages = ["src/auditk"]`), so it is not cleanly
-    importable from library/CLI code -- only reachable at all when the repo
-    checkout happens to be on `sys.path`, which does not hold for an
-    installed `auditk`.
-    """
-    if not root.is_dir():
-        return []
-    sessions: list[tuple[str, Path]] = []
-    for project_dir in sorted(p for p in root.iterdir() if p.is_dir()):
-        for transcript in sorted(project_dir.glob("*.jsonl")):
-            sessions.append((transcript.stem, transcript))
-    return sessions
-
-
-def _has_persisted_plan_store(tasks_root: Path, session_id: str) -> bool:
-    """Mirrors `scripts/corpus_stats.py:has_plan_store` (see
-    `_discover_corpus_session_transcripts` docstring for why this is
-    duplicated rather than imported)."""
-    session_dir = tasks_root / session_id
-    if not session_dir.is_dir():
-        return False
-    return any(session_dir.glob("*.json"))
-
-
-def _tally_plan_anchor_tool_calls(
-    events: list[dict[str, Any]], histogram: Counter[str], anchor_tool_names: tuple[str, ...]
-) -> None:
-    """Add this session's plan-anchor tool_use calls into `histogram` (mutated in place)."""
-    for event in events:
-        if event.get("type") != "assistant":
-            continue
-        message = event.get("message")
-        content = message.get("content") if isinstance(message, dict) else None
-        if not isinstance(content, list):
-            continue
-        for block in content:
-            if not isinstance(block, dict) or block.get("type") != "tool_use":
-                continue
-            name = block.get("name")
-            if name in anchor_tool_names:
-                histogram[str(name)] += 1
-
-
 def _load_corpus_sessions(
     root_path: Path, tasks_root_path: Path, anchor_tool_names: tuple[str, ...]
 ) -> tuple[list[Any], Counter[str]]:
     """Walk `root_path` and load every session transcript into a
     `SessionHealthInput` list, plus the plan-anchor tool-call histogram
     across all of them. Unreadable transcripts are skipped (best-effort
-    forensic tooling; see `_iter_jsonl_records`)."""
-    from auditk.adapters.health import SessionHealthInput
+    forensic tooling; see `corpus_walk.iter_jsonl`).
 
-    session_transcripts = _discover_corpus_session_transcripts(root_path)
+    Built entirely from `auditk.analysis.corpus_walk`'s shared
+    corpus-walking primitives -- the single source of truth also used by
+    `scripts/corpus_stats.py`, so the two never drift out of sync on how
+    the on-disk corpus layout is discovered or parsed.
+    """
+    from auditk.adapters.health import SessionHealthInput
+    from auditk.analysis.corpus_walk import (
+        count_tool_calls,
+        discover_sessions,
+        has_plan_store,
+        iter_jsonl,
+    )
+
     sessions: list[SessionHealthInput] = []
     histogram: Counter[str] = Counter()
 
-    for session_id, transcript in session_transcripts:
+    for session_paths in discover_sessions(root_path):
         try:
-            events = _iter_jsonl_records(transcript)
+            events = iter_jsonl(session_paths.transcript)
         except OSError:
             continue
-        _tally_plan_anchor_tool_calls(events, histogram, anchor_tool_names)
+        histogram.update(count_tool_calls(events, anchor_tool_names))
         sessions.append(
             SessionHealthInput(
                 events=events,
-                session_id=session_id,
-                has_plan_store=_has_persisted_plan_store(tasks_root_path, session_id),
+                session_id=session_paths.session_id,
+                has_plan_store=has_plan_store(tasks_root_path, session_paths.session_id),
             )
         )
     return sessions, histogram
