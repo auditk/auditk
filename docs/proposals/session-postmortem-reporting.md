@@ -1,6 +1,7 @@
 # Proposal — Session Post-Mortem Reporting
 
-**Status:** scoped, awaiting execution
+**Status:** Phases 0 to 4 shipped; Phases 5 to 6 complete as of 2026-07-29
+(see `docs/proposals/cc-adapter-integrity-findings.md` for the results write-up).
 **Author:** orchestrator (Opus), 2026-07-26
 **Executor:** CC session (see Phasing; fast mode unless noted)
 **Repo:** `auditk`
@@ -255,6 +256,10 @@ lists the real CLAUDE.md cascade for a given session cwd.
 
 ### Phase 5 — Adapter self-check (canary)
 
+**Complete (2026-07-29).** Shipped as `adapters/health.py`'s
+`check_adapter_health` plus the `auditk doctor` CLI command. Results and
+known limitations: `docs/proposals/cc-adapter-integrity-findings.md`.
+
 The lesson of Finding A is not "TodoWrite got renamed". It is that **the adapter
 parses a private, explicitly unstable format and failed silently when it
 changed.** The Claude Code docs say so directly: *"The entry format is internal
@@ -277,6 +282,13 @@ So the tool must fail loudly rather than emit a confident wrong number:
 raises an adapter-health failure rather than scoring it.
 
 ### Phase 6 — Subagent traces (the data already exists)
+
+**Complete (2026-07-29).** Shipped as `adapters/claude_code.py`'s
+`load_subagent_transcripts` plus the `subagents` parameter on
+`ingest_claude_code_session`, and, on the scoring side (folded into this
+phase as D6), `analysis/drift.py`'s delegate-aware `compute_drift` and new
+`compute_delegate_drift`. Results and known limitations:
+`docs/proposals/cc-adapter-integrity-findings.md`.
 
 **Correction to an earlier reading of this corpus.** Subagent activity is not
 missing. It is stored one directory deeper than a `projects/*/*.jsonl` glob
