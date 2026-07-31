@@ -26,9 +26,16 @@ from __future__ import annotations
 import hashlib
 import shutil
 import tempfile
+from datetime import date
 from pathlib import Path
 
-from auditk.vault.writeback import KNOWN_INVARIANT_IDS, discover_bound_notes
+import pytest
+
+from auditk.vault.writeback import (
+    KNOWN_INVARIANT_IDS,
+    discover_bound_notes,
+    set_grade_binding_result,
+)
 
 # --- fixture builders ---------------------------------------------------
 
@@ -237,3 +244,237 @@ def test_discover_bound_notes_is_read_only() -> None:
         )
     finally:
         shutil.rmtree(vault)
+
+
+# =========================================================================
+# RED-phase tests for `set_grade_binding_result` (P2 of
+# docs/proposals/phase-grade-binding-writeback.md).
+#
+# `set_grade_binding_result` is currently a typed stub (module imports and
+# mypy --strict passes; the body unconditionally raises `NotImplementedError`).
+# Every test below is expected to FAIL right now:
+# - The non-raising-contract tests (inserts/replaces/idempotence/preservation)
+#   fail because the stub raises `NotImplementedError` instead of returning
+#   spliced text.
+# - The `ValueError`-contract tests (invalid `result`, missing fence) fail
+#   because `pytest.raises(ValueError)` does not catch the stub's
+#   `NotImplementedError` -- it propagates and the test errors, which is the
+#   correct RED failure mode, not a bug in the test.
+#
+# These are pure string tests: no filesystem, no fixture vault. Note text is
+# built inline so each test's expected splice is visible next to its input.
+# =========================================================================
+
+
+def test_set_grade_binding_result_inserts_both_fields_when_absent() -> None:
+    """Case 1: neither field present -> both inserted immediately before the
+    closing `---`, in the order result then checked, with every other
+    frontmatter line and the body preserved verbatim."""
+    text = '---\ntitle: "Some Note"\ntags: [auditk]\n---\n\nBody text.\n'
+
+    result = set_grade_binding_result(text, "pass", date(2026, 7, 31))
+
+    expected = (
+        '---\ntitle: "Some Note"\ntags: [auditk]\n'
+        "grade_binding_result: pass\n"
+        "grade_binding_checked: 2026-07-31\n"
+        "---\n\nBody text.\n"
+    )
+    assert result == expected, (
+        "expected both grade_binding_result and grade_binding_checked inserted, in that "
+        f"order, immediately before the closing fence; got {result!r}"
+    )
+
+
+def test_set_grade_binding_result_replaces_both_fields_in_place_when_present() -> None:
+    """Case 2: both fields already present with stale values -> both replaced
+    in place, preserving their existing line position and the order of every
+    other frontmatter field; body untouched."""
+    text = (
+        '---\ntitle: "Some Note"\n'
+        "grade_binding_result: fail\n"
+        "grade_binding_checked: 2026-01-01\n"
+        "tags: [auditk]\n"
+        "---\n\nBody text.\n"
+    )
+
+    result = set_grade_binding_result(text, "pass", date(2026, 7, 31))
+
+    expected = (
+        '---\ntitle: "Some Note"\n'
+        "grade_binding_result: pass\n"
+        "grade_binding_checked: 2026-07-31\n"
+        "tags: [auditk]\n"
+        "---\n\nBody text.\n"
+    )
+    assert result == expected, (
+        "expected both stale fields replaced in place at their existing line position, "
+        f"with 'tags' untouched and unmoved; got {result!r}"
+    )
+
+
+def test_set_grade_binding_result_replaces_present_and_inserts_absent() -> None:
+    """Case 3: one field present (stale), the other absent -> the present one
+    is replaced in place, the absent one is inserted before the closing
+    fence; no duplicate keys result."""
+    text = (
+        '---\ntitle: "Some Note"\ngrade_binding_result: fail\ntags: [auditk]\n---\n\nBody text.\n'
+    )
+
+    result = set_grade_binding_result(text, "pass", date(2026, 7, 31))
+
+    expected = (
+        '---\ntitle: "Some Note"\n'
+        "grade_binding_result: pass\n"
+        "tags: [auditk]\n"
+        "grade_binding_checked: 2026-07-31\n"
+        "---\n\nBody text.\n"
+    )
+    assert result == expected, (
+        "expected the present 'grade_binding_result' replaced in place and the absent "
+        f"'grade_binding_checked' inserted before the closing fence, with no duplicate "
+        f"keys; got {result!r}"
+    )
+    assert result.count("grade_binding_result:") == 1, (
+        f"expected exactly one 'grade_binding_result:' line, got {result!r}"
+    )
+    assert result.count("grade_binding_checked:") == 1, (
+        f"expected exactly one 'grade_binding_checked:' line, got {result!r}"
+    )
+
+
+def test_set_grade_binding_result_is_idempotent() -> None:
+    """Case 4: applying the splice twice with the same result/checked yields
+    byte-identical output to applying it once."""
+    text = '---\ntitle: "Some Note"\ntags: [auditk]\n---\n\nBody text.\n'
+
+    once = set_grade_binding_result(text, "pass", date(2026, 7, 31))
+    twice = set_grade_binding_result(once, "pass", date(2026, 7, 31))
+
+    assert once == twice, (
+        f"expected idempotent splice (applying twice == applying once); once={once!r} "
+        f"twice={twice!r}"
+    )
+
+
+def test_set_grade_binding_result_preserves_lookalike_body_lines() -> None:
+    """Case 5: body preservation stress. The body itself contains a line that
+    looks like a frontmatter field (`grade_binding_result: something`) and a
+    `---` horizontal rule. Only the actual frontmatter fence may be touched;
+    both body look-alike lines must survive byte-for-byte."""
+    text = (
+        '---\ntitle: "Some Note"\ntags: [auditk]\n---\n\n'
+        "Body text with a look-alike line: grade_binding_result: something\n"
+        "\n---\n\n"
+        "More body after a horizontal rule.\n"
+    )
+
+    result = set_grade_binding_result(text, "pass", date(2026, 7, 31))
+
+    expected = (
+        '---\ntitle: "Some Note"\ntags: [auditk]\n'
+        "grade_binding_result: pass\n"
+        "grade_binding_checked: 2026-07-31\n"
+        "---\n\n"
+        "Body text with a look-alike line: grade_binding_result: something\n"
+        "\n---\n\n"
+        "More body after a horizontal rule.\n"
+    )
+    assert result == expected, (
+        "expected only the frontmatter fence touched; the body's look-alike "
+        f"'grade_binding_result:' line and its '---' horizontal rule must be untouched "
+        f"verbatim; got {result!r}"
+    )
+
+
+def test_set_grade_binding_result_preserves_trailing_newline_when_present() -> None:
+    """Case 6a: input text ending with a single trailing newline stays ending
+    with exactly one trailing newline."""
+    text = '---\ntitle: "Some Note"\n---\n\nBody text.\n'
+
+    result = set_grade_binding_result(text, "pass", date(2026, 7, 31))
+
+    assert result.endswith("Body text.\n"), (
+        f"expected exactly one trailing newline preserved after the body, got {result!r}"
+    )
+    assert not result.endswith("Body text.\n\n"), (
+        f"expected no extra trailing newline appended, got {result!r}"
+    )
+
+
+def test_set_grade_binding_result_preserves_absent_trailing_newline() -> None:
+    """Case 6b: input text with NO trailing newline stays without one."""
+    text = '---\ntitle: "Some Note"\n---\n\nBody text without trailing newline'
+
+    result = set_grade_binding_result(text, "pass", date(2026, 7, 31))
+
+    assert not result.endswith("\n"), (
+        f"expected no trailing newline to be added when the input had none, got {result!r}"
+    )
+    assert result.endswith("Body text without trailing newline"), (
+        f"expected the body's final line preserved exactly, got {result!r}"
+    )
+
+
+def test_set_grade_binding_result_preserves_other_fields_and_order() -> None:
+    """Case 7: other frontmatter fields (tags, grade, grade_binding,
+    grade_binding_id) and their relative order are preserved verbatim when
+    both target fields are inserted."""
+    text = (
+        "---\n"
+        'title: "Some Note"\n'
+        "tags: [auditk, vault]\n"
+        "grade: A\n"
+        'grade_binding: "verified live by the auditk cc-adapter canary"\n'
+        "grade_binding_id: auditk-cc-adapter-canary\n"
+        "---\n\nBody text.\n"
+    )
+
+    result = set_grade_binding_result(text, "fail", date(2026, 7, 31))
+
+    expected = (
+        "---\n"
+        'title: "Some Note"\n'
+        "tags: [auditk, vault]\n"
+        "grade: A\n"
+        'grade_binding: "verified live by the auditk cc-adapter canary"\n'
+        "grade_binding_id: auditk-cc-adapter-canary\n"
+        "grade_binding_result: fail\n"
+        "grade_binding_checked: 2026-07-31\n"
+        "---\n\nBody text.\n"
+    )
+    assert result == expected, (
+        "expected 'title', 'tags', 'grade', 'grade_binding', and 'grade_binding_id' "
+        f"preserved verbatim and in their original relative order; got {result!r}"
+    )
+
+
+def test_set_grade_binding_result_rejects_invalid_result_value() -> None:
+    """Case 8: `result` values other than 'pass' or 'fail' raise ValueError --
+    the write boundary fails closed rather than writing an unknown verdict."""
+    text = '---\ntitle: "Some Note"\n---\n\nBody text.\n'
+
+    with pytest.raises(ValueError, match="pass|fail"):
+        set_grade_binding_result(text, "error", date(2026, 7, 31))
+
+
+def test_set_grade_binding_result_rejects_text_with_no_frontmatter_fence() -> None:
+    """Case 9: text with no leading `---` frontmatter fence raises ValueError
+    -- this function must never fabricate a fence."""
+    text = "No frontmatter here.\nJust body text.\n"
+
+    with pytest.raises(ValueError, match="frontmatter|fence|---"):
+        set_grade_binding_result(text, "pass", date(2026, 7, 31))
+
+
+def test_set_grade_binding_result_renders_checked_date_as_iso_with_zero_padding() -> None:
+    """Case 10: `checked` is rendered as `YYYY-MM-DD`, zero-padded (not e.g.
+    '2026-1-5' for a single-digit month/day)."""
+    text = '---\ntitle: "Some Note"\n---\n\nBody text.\n'
+
+    result = set_grade_binding_result(text, "pass", date(2026, 1, 5))
+
+    assert "grade_binding_checked: 2026-01-05" in result, (
+        f"expected zero-padded ISO date 'grade_binding_checked: 2026-01-05' in output, "
+        f"got {result!r}"
+    )

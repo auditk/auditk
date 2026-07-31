@@ -36,6 +36,7 @@ is expected to extend this same helper rather than add a second one.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -115,3 +116,76 @@ def discover_bound_notes(
         if isinstance(invariant_id, str) and invariant_id in known_ids:
             found.append(BoundNote(path=note_path, invariant_id=invariant_id))
     return found
+
+
+def set_grade_binding_result(text: str, result: str, checked: date) -> str:
+    """Set/replace `grade_binding_result` and `grade_binding_checked` in a
+    note's leading `---`-delimited frontmatter fence (P2 of
+    docs/proposals/phase-grade-binding-writeback.md).
+
+    - Sets exactly two frontmatter fields: `grade_binding_result` (value =
+      `result`) and `grade_binding_checked` (value = `checked` rendered as
+      `YYYY-MM-DD` via `date.isoformat()`). No other field, the body, or the
+      trailing newline changes.
+    - This is a line-oriented edit, NOT a `yaml.safe_load` + re-dump of the
+      fence. A round-trip through PyYAML would reorder keys, drop comments,
+      and change quoting/formatting on every field, not just the two this
+      function owns. Only the two target lines (or two newly inserted
+      lines) differ between input and output; the fence is located once,
+      anchored to the very start of `text`, and its own closing `---` --
+      not the first `---` anywhere in the text -- so a body line that
+      looks like a frontmatter field or a `---` horizontal rule in the
+      body is never touched.
+    - Field already present: its whole line is replaced in place; the
+      line's position and the key's existing position/order relative to
+      other fields is preserved.
+    - Field absent: it is inserted immediately before the closing `---` of
+      the frontmatter fence (i.e. at the end of the frontmatter block, not
+      the start). When both fields are absent, they are inserted in the
+      order `grade_binding_result` then `grade_binding_checked`.
+    - Idempotent by construction: since an already-present field is
+      replaced in place rather than appended, applying this function twice
+      with the same `result` and `checked` yields byte-identical output to
+      applying it once.
+    - `result` must be `"pass"` or `"fail"`; any other value raises
+      `ValueError` -- this is the write boundary's fail-closed check, so the
+      writer only ever emits a known verdict into the vault.
+    - `text` with no leading `---`-delimited frontmatter fence raises
+      `ValueError`. This function never fabricates a fence.
+    - `checked` is an injected `datetime.date` (W3: no wall-clock in pure
+      code); the CLI boundary is responsible for supplying `date.today()`.
+    """
+    if result not in ("pass", "fail"):
+        raise ValueError(f"grade_binding_result must be 'pass' or 'fail', got {result!r}")
+    if not text.startswith("---\n"):
+        raise ValueError("text has no leading '---' frontmatter fence; refusing to fabricate one")
+    fence_end = text.find("\n---", 4)
+    if fence_end == -1:
+        raise ValueError(
+            "text has an opening '---' fence but no closing '---'; refusing to fabricate one"
+        )
+
+    fence_lines = text[4:fence_end].split("\n")
+    remainder = text[fence_end + 1 :]  # starts at the fence's own closing "---" line
+
+    result_line = f"grade_binding_result: {result}"
+    checked_line = f"grade_binding_checked: {checked.isoformat()}"
+
+    new_fence_lines: list[str] = []
+    found_result = False
+    found_checked = False
+    for line in fence_lines:
+        if line.startswith("grade_binding_result:"):
+            new_fence_lines.append(result_line)
+            found_result = True
+        elif line.startswith("grade_binding_checked:"):
+            new_fence_lines.append(checked_line)
+            found_checked = True
+        else:
+            new_fence_lines.append(line)
+    if not found_result:
+        new_fence_lines.append(result_line)
+    if not found_checked:
+        new_fence_lines.append(checked_line)
+
+    return "---\n" + "\n".join(new_fence_lines) + "\n" + remainder
