@@ -35,12 +35,18 @@ is expected to extend this same helper rather than add a second one.
 
 from __future__ import annotations
 
+import hashlib
+import subprocess
+import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 import yaml  # type: ignore[import-untyped]
+
+from auditk.adapters.health import AdapterHealth
 
 # The invariant ids auditk currently owns a write-back for. A bound note's
 # `grade_binding_id` frontmatter field must be a member of this set (or of
@@ -189,3 +195,131 @@ def set_grade_binding_result(text: str, result: str, checked: date) -> str:
         new_fence_lines.append(checked_line)
 
     return "---\n" + "\n".join(new_fence_lines) + "\n" + remainder
+
+
+def result_for(health: AdapterHealth) -> str:
+    """Map an `AdapterHealth` verdict to the vault's `grade_binding_result`
+    value (W4 of docs/proposals/phase-grade-binding-writeback.md).
+
+    Pure and total: `health.ok is True` -> `"pass"`; any other value of
+    `health.ok` (i.e. `False`) -> `"fail"`. The breach list is deliberately
+    never consulted or returned -- W4 states corpus detail must never reach
+    the vault, and this function's whole contract is to produce nothing but
+    one of the two scalar strings `set_grade_binding_result` already
+    validates.
+    """
+    return "pass" if health.ok else "fail"
+
+
+@dataclass(frozen=True)
+class WritebackOutcome:
+    """What happened when `sync_bound_notes` considered one bound note (P3).
+
+    `target` is the note's vault-relative path (e.g. `"Permanent/foo.md"`),
+    matching the `--target` value `sync_bound_notes` would pass to
+    `vault-outbox.py enqueue` for this note. `result` is the `"pass"`/`"fail"`
+    verdict `result_for` mapped for this note (present even when nothing was
+    enqueued, so a caller can see what the live verdict *would* be). `enqueued`
+    is `False` when this note was a no-op (the spliced text was already
+    byte-identical to the note's current text -- nothing changed to write) or
+    when `sync_bound_notes` was called with `dry_run=True`; `True` only when
+    an outbox entry was actually enqueued for this note.
+    """
+
+    target: str
+    result: str
+    enqueued: bool
+
+
+def sync_bound_notes(
+    vault: Path,
+    checked: date,
+    *,
+    run_invariant: Callable[[str], AdapterHealth],
+    outbox_bin: Path,
+    dry_run: bool = False,
+    known_ids: frozenset[str] = KNOWN_INVARIANT_IDS,
+) -> list[WritebackOutcome]:
+    """Compute and enqueue the write-back for every bound note in `vault`
+    (P3 of docs/proposals/phase-grade-binding-writeback.md; the bridge
+    between P1's discovery, P2's splice, and the vault's outbox).
+
+    - Discovers bound notes via `discover_bound_notes(vault, known_ids)`
+      (P1). `known_ids` defaults to the module-wide `KNOWN_INVARIANT_IDS`,
+      matching `discover_bound_notes`'s own default; a caller (the CLI
+      boundary) may narrow it to exactly the ids it has a live invariant
+      registered for, so a note bound to an id auditk knows about in
+      principle but hasn't wired a runner for yet is simply never
+      discovered here, rather than reaching `run_invariant` at all.
+    - For each `BoundNote`, calls `run_invariant(bound_note.invariant_id)`
+      to get its live `AdapterHealth`, and maps it to a `"pass"`/`"fail"`
+      verdict via `result_for` (W4). `run_invariant` is injected
+      specifically so this function -- and every test of it -- never has to
+      touch the real corpus (`_load_corpus_sessions` + `check_adapter_health`);
+      that wiring is the CLI boundary's job (`auditk vault-sync`), not this
+      function's.
+    - Reads the note's current bytes, computes
+      `base_sha = sha256(bytes).hexdigest()` (matching
+      `vault-outbox.py enqueue --base-sha`'s expected form), and splices in
+      the new result via `set_grade_binding_result` (P2), passing the
+      injected `checked` (W3: no wall-clock in this pure-ish core; the CLI
+      boundary supplies `date.today()`).
+    - If the spliced text is byte-identical to the note's current text, this
+      note is a no-op: nothing is enqueued, and its `WritebackOutcome` has
+      `enqueued=False`.
+    - Otherwise, unless `dry_run=True`, shells out to
+      `outbox_bin enqueue --target <vault-relative path> --base-sha <base_sha>`,
+      feeding the spliced text on stdin, and records `enqueued=True`. When
+      `dry_run=True`, the intended write is computed but never enqueued
+      (`enqueued=False` for every note, matching the no-op case's outcome
+      shape but for a different reason). A non-zero exit from the `enqueue`
+      subprocess is never swallowed: it raises `RuntimeError` including the
+      subprocess's stderr, since a failed enqueue silently dropped would be
+      a live note quietly never getting its result written.
+    - `target` on every `WritebackOutcome` is the note's path relative to
+      `vault`, POSIX-separated (`note.path.relative_to(vault).as_posix()`,
+      e.g. `"Permanent/foo.md"`) -- the exact form `outbox_bin enqueue
+      --target` expects.
+    - Returns one `WritebackOutcome` per bound note discovered, in
+      `discover_bound_notes`'s order. This function performs no vault
+      mutation itself, ever -- its only side effect (outside `dry_run`) is
+      shelling out to `outbox_bin enqueue`, which writes only to the durable
+      outbox store, never the live vault working tree (W2).
+    """
+    outcomes: list[WritebackOutcome] = []
+    for note in discover_bound_notes(vault, known_ids):
+        health = run_invariant(note.invariant_id)
+        result = result_for(health)
+
+        current_bytes = note.path.read_bytes()
+        base_sha = hashlib.sha256(current_bytes).hexdigest()
+        current_text = current_bytes.decode("utf-8")
+        new_text = set_grade_binding_result(current_text, result, checked)
+        target = note.path.relative_to(vault).as_posix()
+
+        if new_text == current_text or dry_run:
+            outcomes.append(WritebackOutcome(target=target, result=result, enqueued=False))
+            continue
+
+        completed = subprocess.run(  # noqa: S603 - fixed argv, no shell, trusted outbox_bin
+            [
+                sys.executable,
+                str(outbox_bin),
+                "enqueue",
+                "--target",
+                target,
+                "--base-sha",
+                base_sha,
+            ],
+            input=new_text.encode("utf-8"),
+            capture_output=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            stderr = completed.stderr.decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"vault-outbox enqueue failed for {target!r} "
+                f"(exit {completed.returncode}): {stderr}"
+            )
+        outcomes.append(WritebackOutcome(target=target, result=result, enqueued=True))
+    return outcomes

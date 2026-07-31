@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -333,6 +334,109 @@ def doctor(
         for breach in health.breaches:
             typer.echo(f"  - {breach}")
         raise typer.Exit(1)
+
+
+# The invariant ids `vault-sync` knows how to actually run, each mapped to a
+# thunk producing a live `AdapterHealth`. Today this mirrors
+# `auditk.vault.writeback.KNOWN_INVARIANT_IDS` 1:1 (auditk owns exactly one
+# write-back invariant so far); it is kept as its own mapping, rather than
+# built by iterating that frozenset, because each entry also needs to know
+# *how* to run the invariant (the corpus-load + health-check callable), not
+# just its id. Registered notes with no matching runner here are warned
+# about and skipped in `vault_sync`, not crashed on.
+def _adapter_canary_thunk(root: Path, tasks_root: Path) -> Any:
+    # Returns `AdapterHealth` (`auditk.adapters.health`); typed `Any` here to
+    # match this module's existing lazy-import convention (e.g.
+    # `_discover_sibling_subagents`) rather than importing the adapters
+    # package at module scope for one return annotation.
+    from auditk.adapters.health import PLAN_ANCHOR_TOOL_NAMES, check_adapter_health
+
+    sessions, _ = _load_corpus_sessions(root, tasks_root, PLAN_ANCHOR_TOOL_NAMES)
+    return check_adapter_health(sessions)
+
+
+@app.command(name="vault-sync")
+def vault_sync(
+    vault: str = typer.Option(..., "--vault", help="Vault root (contains Permanent/)."),
+    root: str = typer.Option(
+        str(Path.home() / ".claude" / "projects"),
+        "--root",
+        help="Corpus root to walk, read-only (default: ~/.claude/projects).",
+    ),
+    tasks_root: str = typer.Option(
+        str(Path.home() / ".claude" / "tasks"),
+        "--tasks-root",
+        help="Persisted plan-store root, read-only (default: ~/.claude/tasks).",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Compute and print intended writes; enqueue nothing."
+    ),
+) -> None:
+    """Push live invariant verdicts into vault notes bound via `grade_binding_id`
+    (P3 of docs/proposals/phase-grade-binding-writeback.md).
+
+    For each Permanent note discovered bound to an invariant auditk can run,
+    runs that invariant over --root/--tasks-root, maps the result to
+    pass/fail, and enqueues the frontmatter write into the vault's durable
+    outbox (`<vault>/Harness/Skills/smart-notes/bin/vault-outbox.py enqueue`).
+    This command NEVER writes the vault working tree directly and NEVER
+    drains the outbox -- draining (applying the queued writes to the vault)
+    is a separate, later step. --dry-run computes and prints the intended
+    writes without enqueueing anything.
+    """
+    from auditk.vault.writeback import KNOWN_INVARIANT_IDS, discover_bound_notes, sync_bound_notes
+
+    vault_path = Path(vault)
+    root_path = Path(root)
+    tasks_root_path = Path(tasks_root)
+
+    outbox_bin = vault_path / "Harness" / "Skills" / "smart-notes" / "bin" / "vault-outbox.py"
+    if not outbox_bin.is_file():
+        typer.echo(f"Error: vault-outbox script not found at {outbox_bin}")
+        raise typer.Exit(1)
+
+    invariant_runners: dict[str, Any] = {
+        "auditk-cc-adapter-canary": lambda: _adapter_canary_thunk(root_path, tasks_root_path),
+    }
+
+    # Warn (don't crash) about any discovered note bound to an id auditk
+    # knows about in principle (KNOWN_INVARIANT_IDS) but has no runner wired
+    # up for here -- then narrow sync_bound_notes's own discovery to exactly
+    # the registered ids, so such a note is simply never processed rather
+    # than reaching run_invariant at all.
+    for note in discover_bound_notes(vault_path, KNOWN_INVARIANT_IDS):
+        if note.invariant_id not in invariant_runners:
+            typer.echo(
+                f"Warning: {note.path} is bound to {note.invariant_id!r}, which has no "
+                "vault-sync runner registered; skipping",
+                err=True,
+            )
+    registered_ids = frozenset(invariant_runners)
+
+    def run_invariant(invariant_id: str) -> Any:
+        return invariant_runners[invariant_id]()
+
+    outcomes = sync_bound_notes(
+        vault_path,
+        date.today(),
+        run_invariant=run_invariant,
+        outbox_bin=outbox_bin,
+        dry_run=dry_run,
+        known_ids=registered_ids,
+    )
+
+    if not outcomes:
+        typer.echo("No bound notes discovered.")
+        return
+
+    for outcome in outcomes:
+        if dry_run:
+            status = "dry-run"
+        elif outcome.enqueued:
+            status = "enqueued"
+        else:
+            status = "no-op"
+        typer.echo(f"{outcome.target}: {outcome.result} ({status})")
 
 
 @app.command()
