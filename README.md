@@ -161,3 +161,23 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). The project follows the [Contributor Cov
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE). Probe family definitions are dual-licensed Apache-2.0 / CC-BY-SA.
+
+## Cite
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22045799.svg)](https://doi.org/10.5281/zenodo.22045799)
+
+If you use auditk, cite the technical report:
+
+> Dawson, M. (2026). auditk: an open, attested standard for measuring intent-enactment fidelity in agentic AI. Technical report v0.2. Zenodo. https://doi.org/10.5281/zenodo.22045799
+
+```bibtex
+@techreport{dawson2026auditk,
+  author = {Dawson, Matt},
+  title  = {auditk: an open, attested standard for measuring intent-enactment
+            fidelity in agentic AI},
+  year   = {2026},
+  type   = {Technical report v0.2},
+  doi    = {10.5281/zenodo.22045799},
+  url    = {https://doi.org/10.5281/zenodo.22045799}
+}
+```
