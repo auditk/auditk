@@ -4,6 +4,7 @@
 Drives a model through a benchmark task using httpx, captures the full
 message history, and emits a Trace via BenchmarkSessionAdapter.
 """
+
 from __future__ import annotations
 
 import json
@@ -131,9 +132,7 @@ class BenchmarkToolHarness:
             return f"File {path} written successfully"
         elif name == "TodoWrite":
             todos = args.get("todos", [])
-            active = [
-                t for t in todos if t.get("status") in ("pending", "in_progress")
-            ]
+            active = [t for t in todos if t.get("status") in ("pending", "in_progress")]
             return f"Todo list updated. {len(active)} active tasks. OK"
         elif name == "Report":
             return "Report received. Benchmark session complete."
@@ -171,9 +170,11 @@ class BenchmarkRunner(BenchmarkToolHarness):
         # Strip any non-standard fields from messages before sending
         clean_messages = []
         for msg in messages:
-            clean = {k: v for k, v in msg.items() if k in (
-                "role", "content", "tool_calls", "tool_call_id", "name"
-            )}
+            clean = {
+                k: v
+                for k, v in msg.items()
+                if k in ("role", "content", "tool_calls", "tool_call_id", "name")
+            }
             clean_messages.append(clean)
         response = httpx.post(
             f"{self.base_url}/chat/completions",
@@ -295,9 +296,7 @@ class AnthropicBenchmarkRunner(BenchmarkToolHarness):
             "tool_calls": tool_calls,
         }
 
-    def _to_anthropic_messages(
-        self, openai_msgs: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    def _to_anthropic_messages(self, openai_msgs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         anthropic_msgs: list[dict[str, Any]] = []
         i = 0
         while i < len(openai_msgs):
@@ -307,9 +306,7 @@ class AnthropicBenchmarkRunner(BenchmarkToolHarness):
                 i += 1
                 continue
             elif role == "user":
-                anthropic_msgs.append(
-                    {"role": "user", "content": msg.get("content", "")}
-                )
+                anthropic_msgs.append({"role": "user", "content": msg.get("content", "")})
                 i += 1
             elif role == "assistant":
                 content_blocks: list[dict[str, Any]] = []
@@ -335,10 +332,7 @@ class AnthropicBenchmarkRunner(BenchmarkToolHarness):
                 i += 1
             elif role == "tool":
                 tool_results: list[dict[str, Any]] = []
-                while (
-                    i < len(openai_msgs)
-                    and openai_msgs[i].get("role") == "tool"
-                ):
+                while i < len(openai_msgs) and openai_msgs[i].get("role") == "tool":
                     tool_msg = openai_msgs[i]
                     tool_results.append(
                         {
@@ -385,9 +379,7 @@ class AnthropicBenchmarkRunner(BenchmarkToolHarness):
         ]
         for _ in range(self.max_turns):
             anthropic_messages = self._to_anthropic_messages(openai_history)
-            response = self._call_anthropic(
-                anthropic_messages, tools, task.system_prompt
-            )
+            response = self._call_anthropic(anthropic_messages, tools, task.system_prompt)
             openai_assistant = self._to_openai_assistant_message(response)
             openai_history.append(openai_assistant)
             tool_calls = openai_assistant.get("tool_calls", [])

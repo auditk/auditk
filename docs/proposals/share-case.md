@@ -108,15 +108,18 @@ def share_case(
     source = load_pack(pack) if pack else load_trace(trace)
     records = []
     for sid in step:
-        sd = source.step_drift(sid)          # StepDrift: label/severity/evidence/...
-        st = source.trace_step(sid)          # declared_intent, action, tool_name
-        records.append(build_correction(
-            st, sd,
-            corrected_label=should_be,
-            note=note if redact != "full" else "",
-            redact=redact,
-            judge_model=source.judge_model,
-        ))
+        sd = source.step_drift(sid)  # StepDrift: label/severity/evidence/...
+        st = source.trace_step(sid)  # declared_intent, action, tool_name
+        records.append(
+            build_correction(
+                st,
+                sd,
+                corrected_label=should_be,
+                note=note if redact != "full" else "",
+                redact=redact,
+                judge_model=source.judge_model,
+            )
+        )
     write_json(out, records if len(records) > 1 else records[0])
     typer.echo(f"Wrote {out}. Review it before sharing; it is what you will make public.")
 ```

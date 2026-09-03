@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from auditk.benchmark.runner import AnthropicBenchmarkRunner, BenchmarkRunner
-from auditk.benchmark.task import BenchmarkTask, BENCHMARK_TASKS
+from auditk.benchmark.task import BENCHMARK_TASKS, BenchmarkTask
 from auditk.schema import Trace
 
 
@@ -25,9 +25,7 @@ def _task_message(task: BenchmarkTask) -> dict:
 
 
 def test_runner_init_defaults() -> None:
-    runner = BenchmarkRunner(
-        api_key="fake", base_url="http://test", model_id="test-model"
-    )
+    runner = BenchmarkRunner(api_key="fake", base_url="http://test", model_id="test-model")
     assert runner.api_key == "fake"
     assert runner.base_url == "http://test"
     assert runner.model_id == "test-model"
@@ -45,9 +43,7 @@ def test_runner_init_custom_max_turns() -> None:
 
 
 def test_runner_run_raises_on_empty_api_key() -> None:
-    runner = BenchmarkRunner(
-        api_key="", base_url="http://test", model_id="test-model"
-    )
+    runner = BenchmarkRunner(api_key="", base_url="http://test", model_id="test-model")
     task = BENCHMARK_TASKS[0]
     with pytest.raises(ValueError, match="api_key"):
         runner.run(task)
@@ -57,29 +53,21 @@ def test_runner_run_raises_on_empty_api_key() -> None:
 
 
 def test_runner_readfile_stub_returns_content() -> None:
-    runner = BenchmarkRunner(
-        api_key="fake", base_url="http://test", model_id="test-model"
-    )
+    runner = BenchmarkRunner(api_key="fake", base_url="http://test", model_id="test-model")
     result = runner._handle_tool("ReadFile", {"path": "main.py"})
     assert isinstance(result, str)
     assert len(result) > 0
 
 
 def test_runner_writefile_stub_returns_confirmation() -> None:
-    runner = BenchmarkRunner(
-        api_key="fake", base_url="http://test", model_id="test-model"
-    )
-    result = runner._handle_tool(
-        "WriteFile", {"path": "report.md", "content": "# Report"}
-    )
+    runner = BenchmarkRunner(api_key="fake", base_url="http://test", model_id="test-model")
+    result = runner._handle_tool("WriteFile", {"path": "report.md", "content": "# Report"})
     assert isinstance(result, str)
     assert "written" in result.lower() or "ok" in result.lower()
 
 
 def test_runner_todowrite_stub_returns_ok() -> None:
-    runner = BenchmarkRunner(
-        api_key="fake", base_url="http://test", model_id="test-model"
-    )
+    runner = BenchmarkRunner(api_key="fake", base_url="http://test", model_id="test-model")
     result = runner._handle_tool(
         "TodoWrite",
         {
@@ -98,9 +86,7 @@ def test_runner_todowrite_stub_returns_ok() -> None:
 
 
 def test_runner_report_stub_returns_confirmation() -> None:
-    runner = BenchmarkRunner(
-        api_key="fake", base_url="http://test", model_id="test-model"
-    )
+    runner = BenchmarkRunner(api_key="fake", base_url="http://test", model_id="test-model")
     result = runner._handle_tool(
         "Report",
         {
@@ -119,9 +105,7 @@ def test_runner_report_stub_returns_confirmation() -> None:
 
 
 def test_runner_unknown_tool_raises() -> None:
-    runner = BenchmarkRunner(
-        api_key="fake", base_url="http://test", model_id="test-model"
-    )
+    runner = BenchmarkRunner(api_key="fake", base_url="http://test", model_id="test-model")
     with pytest.raises(ValueError, match="Unknown tool"):
         runner._handle_tool("UnknownTool", {})
 
@@ -130,9 +114,7 @@ def test_runner_unknown_tool_raises() -> None:
 
 
 def test_runner_run_returns_trace_with_mocked_chat(monkeypatch) -> None:
-    runner = BenchmarkRunner(
-        api_key="fake", base_url="http://test", model_id="test-model"
-    )
+    runner = BenchmarkRunner(api_key="fake", base_url="http://test", model_id="test-model")
     task = BENCHMARK_TASKS[0]
 
     call_count = 0
@@ -209,9 +191,7 @@ def test_runner_run_respects_max_turns(monkeypatch) -> None:
 
 
 def test_runner_run_terminates_on_report(monkeypatch) -> None:
-    runner = BenchmarkRunner(
-        api_key="fake", base_url="http://test", model_id="test-model"
-    )
+    runner = BenchmarkRunner(api_key="fake", base_url="http://test", model_id="test-model")
     task = BENCHMARK_TASKS[0]
 
     call_count = 0
@@ -255,9 +235,7 @@ def test_anthropic_runner_init_defaults() -> None:
 
 
 def test_anthropic_runner_init_custom_max_turns() -> None:
-    runner = AnthropicBenchmarkRunner(
-        api_key="fake", model_id="test-model", max_turns=5
-    )
+    runner = AnthropicBenchmarkRunner(api_key="fake", model_id="test-model", max_turns=5)
     assert runner.max_turns == 5
 
 
@@ -318,10 +296,9 @@ def test_anthropic_to_openai_assistant_with_tool_use() -> None:
     assert msg["tool_calls"][0]["id"] == "toolu_01"
     assert msg["tool_calls"][0]["type"] == "function"
     assert msg["tool_calls"][0]["function"]["name"] == "TodoWrite"
-    assert (
-        json.loads(msg["tool_calls"][0]["function"]["arguments"])
-        == {"todos": [{"id": "1", "content": "test"}]}
-    )
+    assert json.loads(msg["tool_calls"][0]["function"]["arguments"]) == {
+        "todos": [{"id": "1", "content": "test"}]
+    }
 
 
 def test_openai_to_anthropic_messages() -> None:
@@ -424,9 +401,7 @@ def test_anthropic_runner_run_returns_trace_with_mocked_chat(monkeypatch) -> Non
 
 
 def test_anthropic_runner_run_respects_max_turns(monkeypatch) -> None:
-    runner = AnthropicBenchmarkRunner(
-        api_key="fake", model_id="test-model", max_turns=3
-    )
+    runner = AnthropicBenchmarkRunner(api_key="fake", model_id="test-model", max_turns=3)
     task = BENCHMARK_TASKS[0]
 
     call_count = 0

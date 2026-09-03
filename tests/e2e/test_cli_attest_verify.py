@@ -214,6 +214,13 @@ def test_attest_verbose_prints_step_labels_and_reasoning(tmp_path: Path) -> None
     assert result.exit_code == 0, result.output
     assert pack_file.exists()
     # The verbose output should contain step labels and reasoning
-    assert "s-" in result.output or "step" in result.output.lower() or "faithful" in result.output or "goal_deviation" in result.output or "neutral" in result.output or "Jaccard" in result.output
+    assert (
+        "s-" in result.output
+        or "step" in result.output.lower()
+        or "faithful" in result.output
+        or "goal_deviation" in result.output
+        or "neutral" in result.output
+        or "Jaccard" in result.output
+    )
     # Ensure the normal success message still appears
     assert "Evidence pack written" in result.output

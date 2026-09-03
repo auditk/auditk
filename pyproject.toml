@@ -101,6 +101,11 @@ ignore = ["UP042"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]
+# S603/S607: subprocess calls here run fixed, locally-known commands
+# (bash hooks, sys.executable + a repo-local script) with argument lists
+# built from trusted local paths, not untrusted external input.
+"scripts/run_benchmark.py" = ["S603", "S607"]
+"tests/unit/test_session_provenance.py" = ["S603", "S607"]
 
 [tool.mypy]
 python_version = "3.11"
