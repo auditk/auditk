@@ -5,6 +5,7 @@ from collections.abc import Callable
 from auditk.adapters.claude_code import ClaudeCodeTraceAdapter
 from auditk.adapters.generic_otel import GENERIC_OTEL_HEALTH_DECLARATION, OtelTraceAdapter
 from auditk.adapters.health import CLAUDE_CODE_HEALTH_DECLARATION, HealthDeclaration
+from auditk.adapters.hermes import HERMES_HEALTH_DECLARATION, HermesTraceAdapter
 from auditk.adapters.langgraph import LANGGRAPH_HEALTH_DECLARATION, LangGraphTraceAdapter
 from auditk.adapters.protocols import TraceAdapter
 
@@ -12,6 +13,7 @@ _REGISTRY: dict[str, TraceAdapter] = {
     "generic-otel": OtelTraceAdapter(),
     "langgraph": LangGraphTraceAdapter(),
     "claude-code": ClaudeCodeTraceAdapter(),
+    "hermes": HermesTraceAdapter(),
 }
 
 
@@ -27,6 +29,10 @@ def _make_claude_code(strip_payloads: bool) -> TraceAdapter:
     return ClaudeCodeTraceAdapter(strip_payloads=strip_payloads)
 
 
+def _make_hermes(strip_payloads: bool) -> TraceAdapter:
+    return HermesTraceAdapter(strip_payloads=strip_payloads)
+
+
 # Every registered adapter today honours `strip_payloads` (P1b gap 1). A
 # future adapter added to `_REGISTRY` without a matching entry here is one
 # that genuinely cannot redact -- `get_adapter(name, strip_payloads=True)`
@@ -36,6 +42,7 @@ _FACTORIES: dict[str, Callable[[bool], TraceAdapter]] = {
     "generic-otel": _make_generic_otel,
     "langgraph": _make_langgraph,
     "claude-code": _make_claude_code,
+    "hermes": _make_hermes,
 }
 
 # Per-adapter health-canary declaration (P1b gap 2) -- see
@@ -46,6 +53,7 @@ _HEALTH_DECLARATIONS: dict[str, HealthDeclaration] = {
     "generic-otel": GENERIC_OTEL_HEALTH_DECLARATION,
     "langgraph": LANGGRAPH_HEALTH_DECLARATION,
     "claude-code": CLAUDE_CODE_HEALTH_DECLARATION,
+    "hermes": HERMES_HEALTH_DECLARATION,
 }
 
 
