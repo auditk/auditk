@@ -9,8 +9,14 @@ conformance kit.
 It is written against the three adapters shipped today —
 `src/auditk/adapters/claude_code.py`, `src/auditk/adapters/langgraph.py`,
 `src/auditk/adapters/generic_otel.py` — and describes their actual,
-current behaviour, not an aspirational one. Two real gaps are called out
-explicitly in "Known contract gaps" below rather than glossed over.
+current behaviour, not an aspirational one. An earlier version of this
+page called out two real contract gaps (redaction pass-through and the
+health canary both being Claude-Code-only) rather than glossing over
+them; P1b closed both — see "Redaction pass-through" and "The health
+canary" below for the design that replaced them, and the Conformance
+table for where a genuine per-format limitation (no call/result-id
+pairing concept in LangGraph or generic-otel) is now a documented,
+reasoned skip rather than a gap.
 
 ## The shape you're producing
 
@@ -72,8 +78,9 @@ becomes one `ENV_EFFECT` step, and `tool_result.is_error` is preserved on
 whatever id linkage your native format actually carries; do not invent one
 if it isn't there. LangGraph and generic-otel spans currently do not carry
 an explicit call/result id pair in the same sense (a checkpoint or span
-either *is* a tool call/result or it isn't) — see "Known contract gaps"
-below for what this means for the health canary.
+either *is* a tool call/result or it isn't) — see "The health canary"
+below for what this means for the health canary's pairing check
+(`HealthDeclaration.pairing_supported=False` for both, with a reason).
 
 ### Declared intent
 
@@ -118,9 +125,9 @@ mark the unmatched case rather than dropping it.
 
 ### The health hooks
 
-See "Known contract gaps" below — this is the one area where the aspiration
-and the current code disagree, and it's worth reading before you assume
-your adapter gets health checking "for free."
+See "The health canary" below — a new adapter gets health checking by
+writing a `HealthDeclaration`, not automatically; it's worth reading
+before you assume your adapter gets it "for free."
 
 ## What an adapter must NOT invent
 
@@ -166,30 +173,63 @@ your adapter gets health checking "for free."
 
 ## Redaction pass-through
 
-Only the Claude Code adapter implements this today.
-`ClaudeCodeTraceAdapter(strip_payloads=True)` (or
-`ingest_claude_code_session(events, strip_payloads=True)`) replaces every
-tool-input and tool-result payload with `{"redacted": True, "size": N}` via
-`claude_code.py:_maybe_redact` — names, types, and timing survive; content
-does not. This is what `auditk ingest --strip-payloads` uses
-(`docs/using-in-practice.md`) before a pack leaves a machine that may hold
-sensitive code.
+`strip_payloads` is contractual as of P1b: every shipped adapter's
+constructor takes `strip_payloads: bool = False`
+(`ClaudeCodeTraceAdapter`, `LangGraphTraceAdapter`, `OtelTraceAdapter`),
+and `auditk ingest --strip-payloads` honours it for all three. Two
+mechanisms exist, deliberately, not one — see "Two redaction mechanisms,
+by design" below for why.
 
-**This is not yet part of the `TraceAdapter` protocol.** `strip_payloads`
-is a `ClaudeCodeTraceAdapter.__init__` keyword, not something
-`protocols.TraceAdapter` declares, and `LangGraphTraceAdapter`/
-`OtelTraceAdapter` take no constructor arguments at all — there is
-currently no way to ask either of them to redact a checkpoint or a span.
-See "Known contract gaps" below.
+Names, kinds, ids, and timing always survive; only the sensitive content
+keys are replaced with `{"redacted": True, "size": N}` (`N` = `len(str(
+original_value))`, or `0` for `None`):
 
-If you're writing a new adapter and your native format can carry sensitive
-payloads (it almost certainly can), follow the same shape: a
-`strip_payloads`-equivalent constructor flag, and a redaction helper that
-keeps structural metadata (name, size, error flag) while dropping content.
+| Adapter | Redacted `Action.payload` keys | Scope |
+|---|---|---|
+| claude-code | `TOOL_CALL`'s `input`, `ENV_EFFECT`'s `tool_result` | `claude_code.py:_maybe_redact`, applied inline at Step-construction time |
+| langgraph | `TOOL_CALL`'s `writes` | `redaction.py:redact_trace`, applied as a post-ingest pass |
+| generic-otel | `TOOL_CALL`'s `input`/`output` | `redaction.py:redact_trace`, applied as a post-ingest pass |
+
+In every case `UTTERANCE` (narration / the LLM's own response) is
+deliberately left untouched — a model's stated intent is not the
+sensitive-payload surface this exists to protect, only the concrete tool
+call/result content is.
+
+### Two redaction mechanisms, by design
+
+Claude Code's own `_maybe_redact` (`claude_code.py`) is applied inline,
+threaded through step construction, and was already correct and
+already pinned by tests before P1b — rewriting it to route through a
+shared pass would have touched a lot of already-working, well-tested code
+for no behavioural gain. `src/auditk/adapters/redaction.py` is instead the
+NEW, shared, adapter-generic mechanism the other two adapters (and any
+future one) plug into: one implementation (`redact_trace`), applied
+POST-INGEST over the already-mapped `Trace`, driven by a small
+`ActionType -> frozenset[str]` "which payload keys are content for this
+action type" declaration each adapter owns (`langgraph.py
+:REDACTION_CONTENT_KEYS`, `generic_otel.py:REDACTION_CONTENT_KEYS`). If
+you're writing a new adapter, reach for `redact_trace` — it's less code
+than reimplementing `_maybe_redact`, and it's already exercised by the
+conformance kit below.
+
+**The CLI never silently ignores `--strip-payloads`.**
+`adapters/registry.py:get_adapter(name, strip_payloads=True)` looks the
+adapter up in `_FACTORIES` (every adapter with redaction support is
+there) and constructs a `strip_payloads=True` instance; an adapter absent
+from `_FACTORIES` makes `get_adapter` raise `ValueError` instead, which
+`cli.py`'s `ingest` command turns into a clean, non-zero-exit refusal —
+never a no-op. If you add a new adapter that genuinely cannot redact its
+format, simply don't add it to `_FACTORIES`: the CLI will refuse loudly
+on `--strip-payloads` for it rather than silently proceeding as if the
+flag had no effect.
 
 ## Registering an adapter
 
-`src/auditk/adapters/registry.py` is a flat name -> instance map:
+`src/auditk/adapters/registry.py` has three flat name -> * maps: `_REGISTRY`
+(name -> a no-strip `TraceAdapter` instance), `_FACTORIES` (name ->
+`Callable[[bool], TraceAdapter]`, for `--strip-payloads`; see above), and
+`_HEALTH_DECLARATIONS` (name -> `HealthDeclaration`; see "The health
+canary" below):
 
 ```python
 _REGISTRY: dict[str, TraceAdapter] = {
@@ -200,47 +240,93 @@ _REGISTRY: dict[str, TraceAdapter] = {
 ```
 
 `get_adapter(name)` raises `KeyError` listing the available names on a
-miss. Add your adapter here (plus a CLI-facing name) to make it reachable
-from `auditk ingest --adapter <name>` /
+miss. Add your adapter to all three maps (plus a CLI-facing name) to make
+it fully reachable from `auditk ingest --adapter <name>` /
 `auditk report --adapter <name>` (`src/auditk/cli.py`). Note that `cli.py`
-currently special-cases `adapter == "claude-code"` in both commands for
-`--plan-tasks` and subagent discovery, and in `report` for the health-check
-gate; `--strip-payloads` on `ingest` is silently a no-op for any adapter
-other than `claude-code` (the CLI's `else` branch calls
-`trace_adapter.ingest(events)` with no way to pass the flag through) — see
-"Known contract gaps."
+still special-cases `adapter == "claude-code"` in both commands for
+`--plan-tasks` and subagent discovery — that part of the contract is
+unchanged by P1b.
 
-## Known contract gaps
+## The health canary
 
-Two things a natural reading of "adapter contract" implies, that the code
-does not yet deliver uniformly. Documented here rather than silently
-special-cased or bodged into a false pass:
+`adapters/health.py:check_adapter_health` reads a `HealthDeclaration`
+(passed via its `declaration` keyword, defaulting to
+`CLAUDE_CODE_HEALTH_DECLARATION`) rather than assuming Claude Code's raw
+JSONL shape — this is what closed P1b's "health canary is
+Claude-Code-shape-specific" gap. A declaration is a small set of pure
+extractor callables plus supported/reason flags, one per sub-check:
 
-1. **The health canary is Claude-Code-shape-specific, not adapter-generic.**
-   `adapters/health.py:check_adapter_health` takes
-   `SessionHealthInput(events=...)`, where `events` is read as raw Claude
-   Code JSONL event dicts — `event["type"] in {"assistant", "user"}`,
-   `message.content[*].type in {"tool_use", "tool_result"}`,
-   `tool_use.id`/`tool_result.tool_use_id`. It has no code path that reads a
-   LangGraph checkpoint or an OTel span. `src/auditk/cli.py`'s `report` and
-   `doctor` commands only ever construct `SessionHealthInput` in the
-   `adapter == "claude-code"` branch; `report --adapter langgraph` or
-   `--adapter generic-otel` never runs `check_adapter_health` at all, gets
-   no plan-anchor check, no unknown-record-type-share check, and no
-   pairing-invariant check. A new adapter for a third native format gets
-   none of this for free — writing an equivalent canary for your own
-   format (a per-record "type" allow-list, a call/result pairing
-   invariant, a "did the harness's own progress-tracking mechanism ever
-   fire" check) is your own follow-up work, not something this contract
-   currently wires in for you.
-2. **Redaction pass-through is Claude-Code-only** — see above. `TraceAdapter`
-   has no redact parameter, and the other two adapter classes have no
-   redaction mechanism to opt into.
+- **unknown-record-type-share**: `record_type(record) -> str | None` plus
+  `known_record_types` — Claude Code's is `event["type"]` against
+  `KNOWN_RECORD_TYPES`; LangGraph's is `metadata.source` (LangGraph's own
+  `Literal["input", "loop", "update", "fork"]`, see
+  `langgraph.py:LANGGRAPH_HEALTH_DECLARATION`); generic-otel's is
+  `attributes["openinference.span.kind"]` against the OpenInference spec's
+  own span-kind vocabulary (`generic_otel.py:GENERIC_OTEL_HEALTH_DECLARATION`).
+  All three support this check.
+- **call/result id-pairing**: `call_ids`/`result_ref_ids` per record, plus
+  `pairing_boundary` (the id-less fallback's trailing-call boundary). Only
+  Claude Code supports this: a `tool_use`/`tool_result` id pair is a real
+  concept in its native format. Neither LangGraph nor generic-otel has an
+  equivalent — a checkpoint records a node's writes *after* the node
+  already ran, and an exported TOOL/RETRIEVER span already carries both
+  its input and output as one record — so both declare
+  `pairing_supported=False` with a reason, and the conformance suite
+  SKIPs (not xfails, not fake-passes) that case for them.
+- **plan-anchor** (corpus-level, `doctor` only): `call_names` per record
+  plus `anchor_tool_names`. Only Claude Code supports this too — neither
+  format has a built-in plan-tracking-tool concept the way Claude Code's
+  harness does (`TodoWrite`/`TaskCreate`/`TaskUpdate`).
 
-Both are exercised, not hidden, by the conformance kit below: the relevant
-cases are `pytest.xfail`'d for `langgraph`/`generic-otel` with a reason
-string pointing back to this section, rather than skipped or silently
-passing.
+`check_adapter_health`'s default parameter value IS
+`CLAUDE_CODE_HEALTH_DECLARATION`, so every pre-P1b call site that doesn't
+pass a `declaration` is byte-for-byte unaffected — verified by running
+`auditk doctor` against the same live corpus before and after this
+change and diffing the output.
+
+`cli.py`'s `report` command wires this generically: any adapter with an
+entry in `registry._HEALTH_DECLARATIONS` gets the canary gate (breach
+without `--force` refuses to emit a report, exactly claude-code's
+existing behaviour); an adapter with none is told so explicitly ("no
+health declaration") rather than the check being silently skipped.
+`doctor` still only ever walks a Claude Code on-disk corpus (its
+session/plan-store/subagents discovery is inherently Claude-Code-shaped)
+and passes `CLAUDE_CODE_HEALTH_DECLARATION` explicitly for clarity.
+
+### Worked example: a hypothetical fourth adapter's declaration
+
+Say you're writing an adapter for a hypothetical `acme-agent` JSON-lines
+format where every record has a `"kind"` field from a small fixed set,
+and there's no separate call/result-id concept (like LangGraph/
+generic-otel) but there IS a `"todo"` tool the harness calls to track its
+plan (like Claude Code):
+
+```python
+from auditk.adapters.health import HealthDeclaration
+
+
+def _acme_record_type(record: dict[str, Any]) -> str | None:
+    return record.get("kind")
+
+
+ACME_HEALTH_DECLARATION = HealthDeclaration(
+    name="acme-agent",
+    record_type=_acme_record_type,
+    known_record_types=frozenset({"turn", "tool_call", "note"}),
+    pairing_supported=False,
+    pairing_skip_reason="acme-agent records have no call/result id pair.",
+    call_names=lambda record: [record["tool"]] if record.get("kind") == "tool_call" else [],
+    anchor_tool_names=frozenset({"todo"}),
+)
+```
+
+That's the whole hook: `known_record_types` catches a future `acme-agent`
+release adding a record kind this adapter has never seen, and
+`anchor_tool_names`/`call_names` let the corpus-level dead-anchor
+invariant recognise `"todo"` calls the same way it recognises Claude
+Code's `TaskCreate`. `pairing_supported=False` is a documented, reasoned
+decision, not an oversight — exactly the langgraph/generic-otel pattern
+above.
 
 ## Conformance
 
@@ -255,21 +341,29 @@ uv run pytest tests/conformance/ -v --no-cov
 An adapter opts in by building one
 `tests/conformance/kit.AdapterConformanceFixtures` — required fields are
 `empty_native`, `malformed_native`, `minimal_valid_native`; optional
-`redaction`/`health` fixtures are `None` when the adapter has no hook for
-that case yet (see "Known contract gaps"), which the suite reflects as
-`xfail`, never a skip. `tests/conformance/providers.py` is the reference
-implementation of this for `claude-code`, `langgraph`, and `generic-otel`.
+`redaction`/`health` fixtures are `None` when the adapter has no hook at
+all for that case, which the suite reflects as `xfail`, never a skip. As
+of P1b all three shipped adapters have both hooks, so no `xfail` is
+reachable for them today — `Optional` stays the shape so a fourth,
+out-of-tree adapter can still opt in before writing one. Within `health`,
+a hook may exist but say a sub-check's *concept* doesn't apply to this
+format (`HealthDeclaration.pairing_supported=False`, for example); the
+suite reflects that as a `pytest.skip()` carrying the declaration's own
+reason — a documented, reasoned skip, not an `xfail` and not a fake pass.
+`tests/conformance/providers.py` is the reference implementation of this
+for `claude-code`, `langgraph`, and `generic-otel`.
 
 | Case | claude-code | langgraph | generic-otel |
 |---|---|---|---|
 | empty-input refuses via `ValueError` | pass | pass | pass |
 | malformed-input refuses cleanly or processes best-effort (never an undocumented exception) | pass | pass | pass |
 | minimal-valid input ingests cleanly | pass | pass | pass |
-| redaction pass-through | pass | xfail (gap 2) | xfail (gap 2) |
-| health pairing invariants (id-matched + id-less) | pass | xfail (gap 1) | xfail (gap 1) |
-| health unknown-record-type-share | pass | xfail (gap 1) | xfail (gap 1) |
+| redaction pass-through | pass | pass | pass |
+| health pairing invariants (id-matched + id-less) | pass | skip (no id-pairing concept) | skip (no id-pairing concept) |
+| health unknown-record-type-share | pass | pass | pass |
 
-If you're adding a fourth adapter: get every non-`xfail` case above passing
-before calling it done, and only reach for `pytest.xfail` (with a reason
-that says *why*, per the two gaps above) when the gap is a real, undecided
-piece of design — not a place to bury a bug.
+If you're adding a fourth adapter: get every non-`xfail`/non-`skip` case
+above passing before calling it done. Reach for `pytest.xfail` only when
+you haven't written a hook yet at all; reach for the declaration-driven
+skip (`*_supported=False` + a reason) only when the concept genuinely
+doesn't exist in your format — never as a place to bury a bug.
