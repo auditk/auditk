@@ -137,15 +137,22 @@ def ingest_otel_spans(spans: list[dict[str, Any]]) -> Trace:
     if not spans:
         raise ValueError("spans must be non-empty")
 
-    root = _find_root_span(spans)
-    root_attrs: dict[str, Any] = root.get("attributes") or {}
-    trace_id: str = root["trace_id"]
+    try:
+        root = _find_root_span(spans)
+        root_attrs: dict[str, Any] = root.get("attributes") or {}
+        trace_id: str = root["trace_id"]
 
-    flow_type = _infer_flow_type(root_attrs.get("openinference.span.kind", ""))
-    agent_config_ref: str = root_attrs.get("session.id") or "unknown"
-    tenant_id: str | None = root_attrs.get("user.id") or None
+        flow_type = _infer_flow_type(root_attrs.get("openinference.span.kind", ""))
+        agent_config_ref: str = root_attrs.get("session.id") or "unknown"
+        tenant_id: str | None = root_attrs.get("user.id") or None
 
-    steps = [_span_to_step(span, trace_id) for span in spans]
+        steps = [_span_to_step(span, trace_id) for span in spans]
+    except (KeyError, TypeError, AttributeError) as exc:
+        # Refuse cleanly on malformed span data (a span dict missing a
+        # required field like `span_id`/`trace_id`/`start_time`/`name`, or a
+        # non-dict entry in `spans`) rather than letting an opaque, undocumented
+        # KeyError/TypeError/AttributeError leak from deep inside `_span_to_step`.
+        raise ValueError(f"malformed OTel span data: {exc}") from exc
 
     return Trace(
         trace_id=trace_id,

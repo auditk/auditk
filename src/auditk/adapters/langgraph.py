@@ -102,9 +102,16 @@ def ingest_checkpoints(checkpoints: list[dict[str, Any]]) -> Trace:
     if not checkpoints:
         raise ValueError("checkpoints list must not be empty")
 
-    thread_id = _get_thread_id(checkpoints[0])
-    base_time = datetime.now(UTC)
-    steps = [_build_step(ck, thread_id, base_time) for ck in checkpoints]
+    try:
+        thread_id = _get_thread_id(checkpoints[0])
+        base_time = datetime.now(UTC)
+        steps = [_build_step(ck, thread_id, base_time) for ck in checkpoints]
+    except (KeyError, TypeError, AttributeError) as exc:
+        # Refuse cleanly on malformed checkpoint data (missing `config`/
+        # `checkpoint`/`configurable.thread_id`, or a non-dict entry) rather
+        # than letting an opaque, undocumented KeyError/TypeError/AttributeError
+        # leak from deep inside `_get_thread_id`/`_build_step`.
+        raise ValueError(f"malformed LangGraph checkpoint data: {exc}") from exc
 
     return Trace(
         trace_id=thread_id,
