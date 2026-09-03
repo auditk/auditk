@@ -9,12 +9,15 @@ from __future__ import annotations
 import json
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 
 from auditk import __spec_version__, __version__
 from auditk.analysis.scorers import DEFAULT_SCORER, get_scorer
+
+if TYPE_CHECKING:
+    from auditk.schema import Trace
 
 app = typer.Typer(
     help="auditk — the open standard for agent alignment evidence.",
@@ -128,6 +131,45 @@ def ingest(
     typer.echo(f"Trace written to {out}: {len(trace.steps)} steps")
 
 
+def _ingest_generic_adapter_report(adapter: str, events: list[Any], force: bool) -> Trace:
+    """Ingest via a non-claude-code adapter for `report`, applying the same
+    adapter-health canary gate claude-code gets above (P1b gap 2): any
+    adapter with a `HealthDeclaration` (`registry.get_health_declaration`)
+    is checked and, on breach, refused unless `--force` -- exactly
+    claude-code's existing behaviour, generalised. An adapter with no
+    declaration at all is reported as such (visibly) rather than the
+    check being silently skipped with no trace of why.
+
+    Exits the process (`typer.Exit(1)`) on an un-forced breach; otherwise
+    returns the ingested `Trace`.
+    """
+    from auditk.adapters import get_adapter
+    from auditk.adapters.health import SessionHealthInput, check_adapter_health
+    from auditk.adapters.registry import get_health_declaration
+
+    trace_adapter = get_adapter(adapter)
+    trace = trace_adapter.ingest(events)
+
+    declaration = get_health_declaration(adapter)
+    if declaration is None:
+        typer.echo(
+            f"Note: adapter {adapter!r} has no health declaration -- "
+            "skipping the adapter-health check for this report."
+        )
+        return trace
+
+    health = check_adapter_health([SessionHealthInput(events=events)], declaration=declaration)
+    if not health.ok and not force:
+        typer.echo(
+            "Error: adapter health check failed -- refusing to emit a report "
+            "(pass --force to override):"
+        )
+        for breach in health.breaches:
+            typer.echo(f"  - {breach}")
+        raise typer.Exit(1)
+    return trace
+
+
 @app.command()
 def report(
     adapter: str = typer.Option("claude-code", help="Adapter name (e.g. claude-code)."),
@@ -169,7 +211,6 @@ def report(
     ),
 ) -> None:
     """Produce a single-session post-mortem report (markdown or JSON)."""
-    from auditk.adapters import get_adapter
     from auditk.adapters.claude_code import ingest_claude_code_session, load_plan_tasks
     from auditk.adapters.health import SessionHealthInput, check_adapter_health
     from auditk.analysis.findings import analyze_trace
@@ -218,8 +259,7 @@ def report(
                 typer.echo(f"  - {breach}")
             raise typer.Exit(1)
     else:
-        trace_adapter = get_adapter(adapter)
-        trace = trace_adapter.ingest(events)
+        trace = _ingest_generic_adapter_report(adapter, events, force)
 
     session_cwd = trace.metadata.get("cwd")
     start_dir = Path(session_cwd) if isinstance(session_cwd, str) and session_cwd else Path.cwd()
@@ -319,12 +359,22 @@ def doctor(
     Exits non-zero if the corpus-level invariant (or any per-session check)
     breaches.
     """
-    from auditk.adapters.health import PLAN_ANCHOR_TOOL_NAMES, check_adapter_health
+    from auditk.adapters.health import (
+        CLAUDE_CODE_HEALTH_DECLARATION,
+        PLAN_ANCHOR_TOOL_NAMES,
+        check_adapter_health,
+    )
 
     sessions, anchor_histogram = _load_corpus_sessions(
         Path(root), Path(tasks_root), PLAN_ANCHOR_TOOL_NAMES
     )
-    health = check_adapter_health(sessions)
+    # `doctor` only ever walks a Claude Code on-disk corpus (the session/
+    # plan-store/subagents layout `_load_corpus_sessions` discovers is
+    # Claude-Code-specific) -- passed explicitly here, per P1b gap 2, so
+    # the wiring doesn't rely on `check_adapter_health`'s default staying
+    # claude-code by coincidence. Behaviourally a no-op: this IS the
+    # default.
+    health = check_adapter_health(sessions, declaration=CLAUDE_CODE_HEALTH_DECLARATION)
 
     typer.echo(f"Sessions discovered: {len(sessions)}")
     typer.echo("Plan-anchor tool-call histogram:")

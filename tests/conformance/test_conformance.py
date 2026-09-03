@@ -18,12 +18,21 @@ Case list (mirrors docs/adapters.md's "Conformance" section):
 - redaction pass-through -- xfail'd where the adapter has no hook (`kit.
                           RedactionFixture`) is None.
 - health pairing invariants (id-matched + id-less) -- xfail'd where the
-                          adapter has no hook (`kit.HealthFixture` is None).
-- health unknown-type-share -- same xfail rule as pairing invariants.
+                          adapter has no `kit.HealthFixture` at all (no
+                          declaration written yet); SKIPPED, with the
+                          declaration's own reason, where a declaration
+                          exists but says this format has no id-pairing
+                          concept (`HealthDeclaration.pairing_supported`
+                          is False -- true for both langgraph and
+                          generic-otel as of P1b, see docs/adapters.md).
+- health unknown-type-share -- same xfail-vs-skip rule, driven by
+                          `HealthDeclaration.unknown_type_share_supported`.
+                          All three shipped adapters support this one.
 
-Every `xfail` below carries a reason pointing at docs/adapters.md's "Known
-contract gaps" section and the P1 report -- never a silent skip, never a
-bare `pytest.mark.xfail` with no explanation.
+Every `xfail`/`skip` below carries a reason pointing at docs/adapters.md's
+"Known contract gaps" section (xfail: P1's report; skip: the adapter's own
+`HealthDeclaration`) -- never silent, never a bare `pytest.mark.xfail`/
+`pytest.skip()` with no explanation.
 """
 
 from __future__ import annotations
@@ -86,8 +95,11 @@ class TestHealthPairingInvariants:
     def test_id_matched_fully_paired_is_healthy(self, fixtures: AdapterConformanceFixtures) -> None:
         if fixtures.health is None:
             pytest.xfail(xfail_reason(fixtures, "health-canary pairing"))
+        if not fixtures.health.declaration.pairing_supported:
+            pytest.skip(fixtures.health.declaration.pairing_skip_reason or "pairing not supported")
         result = check_adapter_health(
-            [SessionHealthInput(events=fixtures.health.id_matched_paired_events)]
+            [SessionHealthInput(events=fixtures.health.id_matched_paired_events)],
+            declaration=fixtures.health.declaration,
         )
         assert result.ok, result.breaches
 
@@ -96,16 +108,22 @@ class TestHealthPairingInvariants:
     ) -> None:
         if fixtures.health is None:
             pytest.xfail(xfail_reason(fixtures, "health-canary pairing"))
+        if not fixtures.health.declaration.pairing_supported:
+            pytest.skip(fixtures.health.declaration.pairing_skip_reason or "pairing not supported")
         result = check_adapter_health(
-            [SessionHealthInput(events=fixtures.health.id_less_trailing_events)]
+            [SessionHealthInput(events=fixtures.health.id_less_trailing_events)],
+            declaration=fixtures.health.declaration,
         )
         assert result.ok, result.breaches
 
     def test_id_matched_genuine_orphan_breaches(self, fixtures: AdapterConformanceFixtures) -> None:
         if fixtures.health is None:
             pytest.xfail(xfail_reason(fixtures, "health-canary pairing"))
+        if not fixtures.health.declaration.pairing_supported:
+            pytest.skip(fixtures.health.declaration.pairing_skip_reason or "pairing not supported")
         result = check_adapter_health(
-            [SessionHealthInput(events=fixtures.health.id_matched_orphan_events)]
+            [SessionHealthInput(events=fixtures.health.id_matched_orphan_events)],
+            declaration=fixtures.health.declaration,
         )
         assert not result.ok
 
@@ -117,7 +135,13 @@ class TestHealthUnknownTypeShare:
     ) -> None:
         if fixtures.health is None:
             pytest.xfail(xfail_reason(fixtures, "health-canary record-type allow-list"))
+        if not fixtures.health.declaration.unknown_type_share_supported:
+            pytest.skip(
+                fixtures.health.declaration.unknown_type_share_skip_reason
+                or "unknown-type-share not supported"
+            )
         result = check_adapter_health(
-            [SessionHealthInput(events=fixtures.health.unknown_type_share_events)]
+            [SessionHealthInput(events=fixtures.health.unknown_type_share_events)],
+            declaration=fixtures.health.declaration,
         )
         assert not result.ok

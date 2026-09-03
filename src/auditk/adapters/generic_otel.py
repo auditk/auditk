@@ -10,6 +10,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+from auditk.adapters.health import HealthDeclaration
 from auditk.adapters.redaction import ContentKeysByActionType, redact_trace
 from auditk.schema import (
     Action,
@@ -174,6 +175,69 @@ def ingest_otel_spans(spans: list[dict[str, Any]]) -> Trace:
         steps=steps,
         source_adapter="generic-otel",
     )
+
+
+# Health-canary declaration (P1b gap 2). `openinference.span.kind` is
+# OpenInference's own bounded span-kind vocabulary -- the direct analogue
+# of Claude Code's `KNOWN_RECORD_TYPES`: a span whose kind this adapter
+# has never seen is exactly the format-drift signal the canary exists to
+# catch (concretely, `_infer_action`'s dispatch above falls back to an
+# empty UTTERANCE for any kind outside this set -- silently, the same
+# failure mode `KNOWN_RECORD_TYPES`'s module docstring describes for
+# Claude Code's TodoWrite rename).
+#
+# Call/result id-pairing and plan-anchor tool-tracking have no equivalent
+# in this format (see docs/adapters.md): a TOOL/RETRIEVER span already
+# carries both its `input.value` and `output.value` as one record when
+# exported -- there is no separate "call issued, result pending" record
+# to pair -- and OpenInference has no span kind for a plan-tracking tool
+# call the way Claude Code's harness does. Both are declared unsupported
+# with a reason rather than faked.
+_OTEL_KNOWN_SPAN_KINDS: frozenset[str] = frozenset(
+    {
+        "CHAIN",
+        "RETRIEVER",
+        "RERANKER",
+        "LLM",
+        "EMBEDDING",
+        "TOOL",
+        "AGENT",
+        "GUARDRAIL",
+        "EVALUATOR",
+        "UNKNOWN",
+    }
+)
+_OTEL_PAIRING_SKIP_REASON = (
+    "OTel/OpenInference spans are exported after the operation they describe "
+    "completes: a TOOL span already carries both its input and output attributes "
+    "as one record, so there is no separate pending-call/result-id pair to check "
+    "(see docs/adapters.md's 'Known contract gaps')."
+)
+_OTEL_PLAN_ANCHOR_SKIP_REASON = (
+    "OpenInference spans have no plan-tracking span kind equivalent to Claude "
+    "Code's TodoWrite/TaskCreate/TaskUpdate."
+)
+
+
+def _otel_record_type(span: dict[str, Any]) -> str | None:
+    """`GENERIC_OTEL_HEALTH_DECLARATION.record_type`: a span's own
+    `attributes["openinference.span.kind"]`."""
+    if not isinstance(span, dict):
+        return None
+    attrs = span.get("attributes")
+    kind = attrs.get("openinference.span.kind") if isinstance(attrs, dict) else None
+    return str(kind) if kind else None
+
+
+GENERIC_OTEL_HEALTH_DECLARATION = HealthDeclaration(
+    name="generic-otel",
+    record_type=_otel_record_type,
+    known_record_types=_OTEL_KNOWN_SPAN_KINDS,
+    pairing_supported=False,
+    pairing_skip_reason=_OTEL_PAIRING_SKIP_REASON,
+    plan_anchor_supported=False,
+    plan_anchor_skip_reason=_OTEL_PLAN_ANCHOR_SKIP_REASON,
+)
 
 
 class OtelTraceAdapter:

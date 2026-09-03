@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from auditk.adapters.health import HealthDeclaration
 from auditk.adapters.redaction import ContentKeysByActionType, redact_trace
 from auditk.schema import (
     Action,
@@ -132,6 +133,56 @@ def ingest_checkpoints(checkpoints: list[dict[str, Any]]) -> Trace:
         steps=steps,
         source_adapter="langgraph",
     )
+
+
+# Health-canary declaration (P1b gap 2). LangGraph's `CheckpointMetadata`
+# has a genuine, bounded "record type" analogue: `metadata.source`, one of
+# LangGraph's own `Literal["input", "loop", "update", "fork"]` -- which
+# step of the run this checkpoint records ("input" = the graph's entry
+# write, "loop" = a normal superstep, "update" = a manual state edit,
+# "fork" = a replay branch point). A checkpoint whose `source` is none of
+# these is exactly the kind of format-drift signal `KNOWN_RECORD_TYPES`
+# exists to catch for Claude Code -- a future LangGraph release adding a
+# new source kind this adapter has never seen.
+#
+# Call/result id-pairing and plan-anchor tool-tracking have no equivalent
+# in this format (see docs/adapters.md): a checkpoint records a node's
+# writes AFTER the node already ran -- there is no separate "call issued,
+# result pending" record to pair, and LangGraph has no built-in
+# plan-tracking tool the way Claude Code's harness does. Both are declared
+# unsupported with a reason rather than faked.
+_LANGGRAPH_KNOWN_RECORD_TYPES: frozenset[str] = frozenset({"input", "loop", "update", "fork"})
+_LANGGRAPH_PAIRING_SKIP_REASON = (
+    "LangGraph checkpoints have no call/result id-pairing concept: a checkpoint "
+    "records a node's writes after the node already completed, not a pending "
+    "call awaiting a result (see docs/adapters.md's 'Known contract gaps')."
+)
+_LANGGRAPH_PLAN_ANCHOR_SKIP_REASON = (
+    "LangGraph has no built-in plan-tracking tool equivalent to Claude Code's "
+    "TodoWrite/TaskCreate/TaskUpdate; node names are graph-specific, not a fixed "
+    "vocabulary this adapter could declare an anchor set for."
+)
+
+
+def _langgraph_record_type(checkpoint_dict: dict[str, Any]) -> str | None:
+    """`LANGGRAPH_HEALTH_DECLARATION.record_type`: a checkpoint's own
+    `metadata.source` -- LangGraph's real, bounded step-kind vocabulary."""
+    if not isinstance(checkpoint_dict, dict):
+        return None
+    metadata = checkpoint_dict.get("metadata")
+    source = metadata.get("source") if isinstance(metadata, dict) else None
+    return str(source) if source is not None else None
+
+
+LANGGRAPH_HEALTH_DECLARATION = HealthDeclaration(
+    name="langgraph",
+    record_type=_langgraph_record_type,
+    known_record_types=_LANGGRAPH_KNOWN_RECORD_TYPES,
+    pairing_supported=False,
+    pairing_skip_reason=_LANGGRAPH_PAIRING_SKIP_REASON,
+    plan_anchor_supported=False,
+    plan_anchor_skip_reason=_LANGGRAPH_PLAN_ANCHOR_SKIP_REASON,
+)
 
 
 class LangGraphTraceAdapter:

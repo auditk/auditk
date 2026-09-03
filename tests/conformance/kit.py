@@ -9,11 +9,18 @@ in by building one `AdapterConformanceFixtures` (see
 it to `providers.PROVIDERS`.
 
 Two of the four field groups (`redaction`, `health`) are `Optional` by
-design: not every adapter has a redaction hook or a health-canary hook today
-(see docs/adapters.md's "Known contract gaps" section, and the P1 report).
-An adapter that has neither still opts in with an `AdapterConformanceFixtures`
-whose `redaction`/`health` are `None` -- the suite marks those specific cases
-`xfail` (never skip, never a silent pass) rather than refusing to run at all.
+design: an adapter with genuinely no hook for one of them yet still opts in
+with an `AdapterConformanceFixtures` whose `redaction`/`health` is `None` --
+the suite marks those specific cases `xfail` (never skip, never a silent
+pass) rather than refusing to run at all. As of P1b, all three shipped
+adapters (`claude-code`, `langgraph`, `generic-otel`) have both hooks, so no
+`xfail` is reachable today for them; `redaction`/`health` staying `Optional`
+is what lets a fourth, out-of-tree adapter opt in early without writing a
+redaction hook or a health `HealthDeclaration` on day one. Within `health`,
+a hook may still exist but say a given sub-check's *concept* doesn't apply
+to this format (`HealthDeclaration.pairing_supported=False`, for example) --
+that is a documented SKIP, not an `xfail`; see docs/adapters.md's "Known
+contract gaps" section for both distinctions.
 """
 
 from __future__ import annotations
@@ -22,6 +29,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from auditk.adapters.health import HealthDeclaration
 from auditk.adapters.protocols import TraceAdapter
 from auditk.schema import Trace
 
@@ -39,15 +47,25 @@ class RedactionFixture:
 
 @dataclass(frozen=True)
 class HealthFixture:
-    """Raw event lists shaped for `auditk.adapters.health.SessionHealthInput`,
-    covering the four pairing/unknown-type-share cases `TestHealthPairing`
-    and `TestHealthUnknownTypeShare` assert against. Only meaningful for an
-    adapter whose native format is the Claude-Code raw-JSONL shape
-    `adapters/health.py` actually reads (`event["type"] in {"assistant",
-    "user"}`, `message.content[*].type in {"tool_use", "tool_result"}`) --
-    see docs/adapters.md for why this is not yet adapter-agnostic.
+    """One adapter's own-native-format event lists, plus its
+    `HealthDeclaration`, covering the pairing/unknown-type-share cases
+    `TestHealthPairingInvariants` and `TestHealthUnknownTypeShare` assert
+    against (P1b gap 2: the canary is no longer Claude-Code-shape-specific
+    -- `declaration` is what tells `check_adapter_health` how to read
+    THIS adapter's own record shape, so every field below is built from
+    that adapter's own native records, not Claude Code's raw JSONL).
+
+    `declaration.pairing_supported`/`declaration.unknown_type_share_supported`
+    tell the suite whether a given case is even applicable to this format
+    at all -- when False, the suite treats it as a documented, reasoned
+    SKIP (using `declaration.pairing_skip_reason`/
+    `unknown_type_share_skip_reason`), never a fake pass and never an
+    `xfail` (an `xfail` would say "this SHOULD pass but doesn't yet"; a
+    format that genuinely has no such concept should say so plainly
+    instead -- see docs/adapters.md's "Known contract gaps").
     """
 
+    declaration: HealthDeclaration
     id_matched_paired_events: list[dict[str, Any]]
     id_less_trailing_events: list[dict[str, Any]]
     id_matched_orphan_events: list[dict[str, Any]]

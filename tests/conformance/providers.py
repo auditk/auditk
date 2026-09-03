@@ -16,8 +16,9 @@ from __future__ import annotations
 from typing import Any
 
 from auditk.adapters.claude_code import ClaudeCodeTraceAdapter
-from auditk.adapters.generic_otel import OtelTraceAdapter
-from auditk.adapters.langgraph import LangGraphTraceAdapter
+from auditk.adapters.generic_otel import GENERIC_OTEL_HEALTH_DECLARATION, OtelTraceAdapter
+from auditk.adapters.health import CLAUDE_CODE_HEALTH_DECLARATION
+from auditk.adapters.langgraph import LANGGRAPH_HEALTH_DECLARATION, LangGraphTraceAdapter
 from auditk.schema import ActionType, Trace
 from tests.conformance.kit import AdapterConformanceFixtures, HealthFixture, RedactionFixture
 
@@ -94,6 +95,7 @@ def _cc_health_fixture() -> HealthFixture:
         _cc_user_text()
     ]
     return HealthFixture(
+        declaration=CLAUDE_CODE_HEALTH_DECLARATION,
         id_matched_paired_events=id_matched_paired,
         id_less_trailing_events=id_less_trailing,
         id_matched_orphan_events=id_matched_orphan,
@@ -132,11 +134,17 @@ def _lg_checkpoint(
     step: int = 0,
     writes: dict[str, Any] | None = None,
     parent_checkpoint_id: str | None = None,
+    source: str = "loop",
 ) -> dict[str, Any]:
     checkpoint: dict[str, Any] = {
         "config": {"configurable": {"thread_id": thread_id}},
         "checkpoint": {"id": checkpoint_id},
-        "metadata": {"step": step, "writes": writes or {}},
+        # `source` is LangGraph's own CheckpointMetadata field -- one of
+        # "input"/"loop"/"update"/"fork" in real usage (see
+        # `LANGGRAPH_HEALTH_DECLARATION`). Defaulted to "loop" (a normal
+        # superstep) so existing callers that don't care about it still
+        # build a well-formed, KNOWN-type checkpoint.
+        "metadata": {"step": step, "writes": writes or {}, "source": source},
     }
     if parent_checkpoint_id is not None:
         checkpoint["parent_config"] = {"configurable": {"checkpoint_id": parent_checkpoint_id}}
@@ -166,6 +174,30 @@ def _lg_redaction_fixture() -> RedactionFixture:
     )
 
 
+def _lg_health_fixture() -> HealthFixture:
+    # LangGraph has no call/result id-pairing concept
+    # (`LANGGRAPH_HEALTH_DECLARATION.pairing_supported` is False, with a
+    # reason) -- these three lists exist for structural completeness
+    # only; `TestHealthPairingInvariants` SKIPs rather than asserting
+    # against them, per the declaration.
+    id_matched_paired = [_lg_checkpoint("ck-1")]
+    id_less_trailing = [_lg_checkpoint("ck-1")]
+    id_matched_orphan = [_lg_checkpoint("ck-1")]
+    # 4 checkpoints whose `metadata.source` is a value LangGraph has never
+    # emitted (not in {"input", "loop", "update", "fork"}), 1 with a known
+    # source -- 80% unknown, well over the 5% floor.
+    unknown_type_share = [
+        _lg_checkpoint(f"ck-unknown-{i}", source="totally-new-conformance-source") for i in range(4)
+    ] + [_lg_checkpoint("ck-known", source="loop")]
+    return HealthFixture(
+        declaration=LANGGRAPH_HEALTH_DECLARATION,
+        id_matched_paired_events=id_matched_paired,
+        id_less_trailing_events=id_less_trailing,
+        id_matched_orphan_events=id_matched_orphan,
+        unknown_type_share_events=unknown_type_share,
+    )
+
+
 _LANGGRAPH = AdapterConformanceFixtures(
     name="langgraph",
     adapter=LangGraphTraceAdapter(),
@@ -179,9 +211,7 @@ _LANGGRAPH = AdapterConformanceFixtures(
         )
     ],
     redaction=_lg_redaction_fixture(),
-    # No health hook yet: check_adapter_health only understands the
-    # Claude-Code raw JSONL shape today (P1b gap 2, next commit).
-    health=None,
+    health=_lg_health_fixture(),
 )
 
 
@@ -239,6 +269,30 @@ def _otel_redaction_fixture() -> RedactionFixture:
     )
 
 
+def _otel_health_fixture() -> HealthFixture:
+    # generic-otel has no call/result id-pairing concept
+    # (`GENERIC_OTEL_HEALTH_DECLARATION.pairing_supported` is False, with
+    # a reason) -- these three lists exist for structural completeness
+    # only; `TestHealthPairingInvariants` SKIPs rather than asserting
+    # against them, per the declaration.
+    id_matched_paired = [_otel_span("span-1", kind="TOOL")]
+    id_less_trailing = [_otel_span("span-1", kind="TOOL")]
+    id_matched_orphan = [_otel_span("span-1", kind="TOOL")]
+    # 4 spans whose `openinference.span.kind` is a value never seen in the
+    # OpenInference spec's own span-kind vocabulary, 1 with a known kind --
+    # 80% unknown, well over the 5% floor.
+    unknown_type_share = [
+        _otel_span(f"span-unknown-{i}", kind="TOTALLY-NEW-SPAN-KIND-V9") for i in range(4)
+    ] + [_otel_span("span-known", kind="LLM")]
+    return HealthFixture(
+        declaration=GENERIC_OTEL_HEALTH_DECLARATION,
+        id_matched_paired_events=id_matched_paired,
+        id_less_trailing_events=id_less_trailing,
+        id_matched_orphan_events=id_matched_orphan,
+        unknown_type_share_events=unknown_type_share,
+    )
+
+
 _GENERIC_OTEL = AdapterConformanceFixtures(
     name="generic-otel",
     adapter=OtelTraceAdapter(),
@@ -249,8 +303,7 @@ _GENERIC_OTEL = AdapterConformanceFixtures(
     malformed_native=[{"trace_id": "trace-1", "start_time": "2026-01-01T00:00:00Z", "name": "x"}],
     minimal_valid_native=[_otel_span("span-1")],
     redaction=_otel_redaction_fixture(),
-    # No health hook yet, same reason as langgraph (P1b gap 2, next commit).
-    health=None,
+    health=_otel_health_fixture(),
 )
 
 
