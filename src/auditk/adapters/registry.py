@@ -7,6 +7,7 @@ from auditk.adapters.generic_otel import GENERIC_OTEL_HEALTH_DECLARATION, OtelTr
 from auditk.adapters.health import CLAUDE_CODE_HEALTH_DECLARATION, HealthDeclaration
 from auditk.adapters.hermes import HERMES_HEALTH_DECLARATION, HermesTraceAdapter
 from auditk.adapters.langgraph import LANGGRAPH_HEALTH_DECLARATION, LangGraphTraceAdapter
+from auditk.adapters.pi import PiTraceAdapter
 from auditk.adapters.protocols import TraceAdapter
 
 _REGISTRY: dict[str, TraceAdapter] = {
@@ -14,6 +15,11 @@ _REGISTRY: dict[str, TraceAdapter] = {
     "langgraph": LangGraphTraceAdapter(),
     "claude-code": ClaudeCodeTraceAdapter(),
     "hermes": HermesTraceAdapter(),
+    # Gated stub -- see auditk.adapters.pi / docs/pi-format-notes.md. Every
+    # `ingest()` call refuses loudly; registering it here makes `--adapter
+    # pi` a real, documented CLI name (not an unknown-adapter KeyError)
+    # while it stays gated on sample traces.
+    "pi": PiTraceAdapter(),
 }
 
 
@@ -33,6 +39,14 @@ def _make_hermes(strip_payloads: bool) -> TraceAdapter:
     return HermesTraceAdapter(strip_payloads=strip_payloads)
 
 
+def _make_pi(strip_payloads: bool) -> TraceAdapter:
+    # Included in _FACTORIES (unlike a genuinely can't-redact adapter) so
+    # `--strip-payloads` on `pi` produces the SAME gated-on-samples message
+    # as every other pi entry point, rather than a generic "no redaction
+    # support" message that would be true but less informative here.
+    return PiTraceAdapter(strip_payloads=strip_payloads)
+
+
 # Every registered adapter today honours `strip_payloads` (P1b gap 1). A
 # future adapter added to `_REGISTRY` without a matching entry here is one
 # that genuinely cannot redact -- `get_adapter(name, strip_payloads=True)`
@@ -43,12 +57,16 @@ _FACTORIES: dict[str, Callable[[bool], TraceAdapter]] = {
     "langgraph": _make_langgraph,
     "claude-code": _make_claude_code,
     "hermes": _make_hermes,
+    "pi": _make_pi,
 }
 
 # Per-adapter health-canary declaration (P1b gap 2) -- see
 # `auditk.adapters.health.HealthDeclaration`. An adapter absent from this
 # map has no health declaration at all; `cli.py` surfaces that visibly
-# rather than silently skipping the canary.
+# rather than silently skipping the canary. `pi` is deliberately absent:
+# there is no real record shape to declare a canary against yet (see
+# docs/pi-format-notes.md) -- `report --adapter pi` never reaches the
+# health check anyway, since `ingest()` itself refuses first.
 _HEALTH_DECLARATIONS: dict[str, HealthDeclaration] = {
     "generic-otel": GENERIC_OTEL_HEALTH_DECLARATION,
     "langgraph": LANGGRAPH_HEALTH_DECLARATION,

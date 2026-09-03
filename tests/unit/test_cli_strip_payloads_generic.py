@@ -20,6 +20,22 @@ unit level:
   matching redaction factory -- there is no real adapter shipped today
   that lacks this, so the registry is the only way to exercise the
   refusal path.
+
+`TestReportStripPayloads` (P4) pins the equivalent fix for `auditk report`,
+which had no `--strip-payloads` at all until now (`ingest` had it,
+`report` didn't -- an inconsistent CLI surface, not a redaction gap).
+Unlike `ingest`, `report` also *analyses* the trace it ingests
+(`analysis/findings.py`'s structural findings engine), and several of those
+findings read straight out of `Action.payload` content
+(`find_bash_tripwires`'s `input["command"]`, in particular) -- so this
+class also pins the real, expected trade-off: a genuinely redacted payload
+is a `{"redacted": True, "size": N}` dict, `_command()`/`_tool_input()`'s
+`isinstance(..., str)` guards correctly treat that as "no command", and a
+tripwire that would have fired against the raw command does not fire
+against the redacted one. That is not a bug in `--strip-payloads` -- the
+redaction itself works identically to `ingest`'s -- it is what "redact
+before analysing" necessarily costs, and `report --strip-payloads`'s own
+help text documents it.
 """
 
 from __future__ import annotations
@@ -235,3 +251,149 @@ class TestUnsupportedAdapterRefusesLoudly:
 
         assert result.exit_code == 0, result.output
         assert out_file.exists()
+
+
+def _claude_code_tripwire_events() -> list[dict[str, Any]]:
+    """A minimal claude-code session with one destructive-`rm` Bash call --
+    the shape `find_bash_tripwires` reads (`Action.payload["input"]["command"]`,
+    claude-code-adapter-specific; see analysis/findings.py). Deliberately
+    NOT one of the repo's checked-in fixtures (none of them carries a
+    tripwire command) -- synthetic and self-contained, same convention as
+    this file's other native-format fixtures.
+    """
+    return [
+        {"type": "user", "message": {"content": "Clean up the scratch directory."}},
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "tu-rm",
+                        "name": "Bash",
+                        "input": {"command": "rm -rf /tmp/scratch"},
+                    }
+                ]
+            },
+        },
+        {
+            "type": "user",
+            "message": {
+                "content": [{"type": "tool_result", "tool_use_id": "tu-rm", "content": "removed"}]
+            },
+        },
+    ]
+
+
+class TestReportStripPayloads:
+    """P4: `report --strip-payloads` (see this module's docstring for the
+    "redacted payloads mean fewer findings can fire" trade-off this pins
+    alongside the redaction itself)."""
+
+    def test_claude_code_without_strip_payloads_tripwire_fires(self, tmp_path: Path) -> None:
+        in_file = tmp_path / "session.jsonl"
+        in_file.write_text("\n".join(json.dumps(e) for e in _claude_code_tripwire_events()) + "\n")
+
+        result = runner.invoke(
+            app,
+            ["report", "--in", str(in_file), "--no-policy-context"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "rm -rf /tmp/scratch" in result.output
+        assert "destructive-rm" in result.output
+
+    def test_claude_code_strip_payloads_redacts_the_command_and_the_tripwire_does_not_fire(
+        self, tmp_path: Path
+    ) -> None:
+        in_file = tmp_path / "session.jsonl"
+        in_file.write_text("\n".join(json.dumps(e) for e in _claude_code_tripwire_events()) + "\n")
+
+        result = runner.invoke(
+            app,
+            ["report", "--in", str(in_file), "--no-policy-context", "--strip-payloads"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "rm -rf" not in result.output
+        assert "destructive-rm" not in result.output
+
+    def test_generic_otel_strip_payloads_redacts_the_underlying_trace(self, tmp_path: Path) -> None:
+        """A non-claude-code adapter's report also honours the flag (the CLI
+        gap this closes was in the generic `_ingest_generic_adapter_report`
+        path, not just claude-code's). generic-otel's payload shape isn't
+        one `find_bash_tripwires` reads, so this pins the redaction itself
+        (via --format json, which includes the header/timeline verbatim)
+        rather than a findings-engine side effect."""
+        in_file = tmp_path / "spans.json"
+        in_file.write_text(json.dumps(_otel_spans()))
+
+        result = runner.invoke(
+            app,
+            [
+                "report",
+                "--adapter",
+                "generic-otel",
+                "--in",
+                str(in_file),
+                "--no-policy-context",
+                "--strip-payloads",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "ls sandbox/" not in result.output
+        assert "file1" not in result.output
+
+    def test_generic_otel_without_strip_payloads_content_survives(self, tmp_path: Path) -> None:
+        in_file = tmp_path / "spans.json"
+        in_file.write_text(json.dumps(_otel_spans()))
+
+        result = runner.invoke(
+            app,
+            [
+                "report",
+                "--adapter",
+                "generic-otel",
+                "--in",
+                str(in_file),
+                "--no-policy-context",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        # generic-otel's payload isn't read by any timeline/findings rule,
+        # so this just pins that omitting the flag doesn't accidentally
+        # redact -- not that the content appears in the report body.
+        assert "redacted" not in result.output.lower()
+
+
+class TestReportPiStubStripPayloads:
+    """`report --adapter pi --strip-payloads` refuses with the same gated
+    message as every other pi entry point -- see
+    tests/unit/test_cli_pi_stub.py::TestReportPiStub for the flag-less
+    case (this test only exists here because `--strip-payloads` on
+    `report` didn't exist yet when that module was written)."""
+
+    def test_refuses_with_the_documented_message(self, tmp_path: Path) -> None:
+        from auditk.adapters.pi import PI_GATED_MESSAGE
+
+        in_file = tmp_path / "pi-session.json"
+        in_file.write_text(json.dumps([{"type": "session", "version": 3, "id": "sess-1"}]))
+
+        result = runner.invoke(
+            app,
+            [
+                "report",
+                "--adapter",
+                "pi",
+                "--in",
+                str(in_file),
+                "--no-policy-context",
+                "--strip-payloads",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert PI_GATED_MESSAGE in result.output
+        assert "Traceback" not in result.output

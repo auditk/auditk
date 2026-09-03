@@ -41,11 +41,15 @@ import pytest
 
 from auditk.adapters.health import SessionHealthInput, check_adapter_health
 from auditk.schema import Trace
-from tests.conformance.kit import AdapterConformanceFixtures, xfail_reason
-from tests.conformance.providers import PROVIDERS
+from tests.conformance.kit import AdapterConformanceFixtures, RefusingAdapterFixtures, xfail_reason
+from tests.conformance.providers import PROVIDERS, REFUSING_PROVIDERS
 
 
 def _id(fixtures: AdapterConformanceFixtures) -> str:
+    return fixtures.name
+
+
+def _refusing_id(fixtures: RefusingAdapterFixtures) -> str:
     return fixtures.name
 
 
@@ -126,6 +130,44 @@ class TestHealthPairingInvariants:
             declaration=fixtures.health.declaration,
         )
         assert not result.ok
+
+
+@pytest.mark.parametrize("fixtures", REFUSING_PROVIDERS, ids=_refusing_id)
+class TestGatedStubAlwaysRefuses:
+    """A gated stub adapter (`pi`, see docs/pi-format-notes.md) is
+    deliberately NOT in `PROVIDERS` -- see `kit.RefusingAdapterFixtures`'s
+    docstring for why `TestMinimalValidIngest` above cannot cover it (that
+    case asserts `ingest()` *succeeds*).
+
+    This class asserts the opposite invariant on purpose: every entry point
+    refuses, with the documented message, on every input shape -- empty,
+    malformed, AND an otherwise minimal-valid-*looking* input alike. The
+    third case is the one that actually distinguishes a loud stub from a
+    real adapter: a real adapter's `minimal_valid_native` ingests cleanly;
+    a gated stub's does not, because nothing about the input shape matters
+    to it at all. When this stub becomes a real adapter, this whole class
+    (and the `REFUSING_PROVIDERS` entry it parametrises over) must be
+    deleted and replaced with a normal `PROVIDERS` entry -- that's a
+    deliberate one-way door, not an oversight.
+    """
+
+    def test_empty_native_refuses_with_expected_message(
+        self, fixtures: RefusingAdapterFixtures
+    ) -> None:
+        with pytest.raises(ValueError, match=fixtures.expected_message_fragment):
+            fixtures.adapter.ingest(fixtures.empty_native)
+
+    def test_malformed_native_refuses_with_expected_message(
+        self, fixtures: RefusingAdapterFixtures
+    ) -> None:
+        with pytest.raises(ValueError, match=fixtures.expected_message_fragment):
+            fixtures.adapter.ingest(fixtures.malformed_native)
+
+    def test_minimal_valid_looking_native_still_refuses(
+        self, fixtures: RefusingAdapterFixtures
+    ) -> None:
+        with pytest.raises(ValueError, match=fixtures.expected_message_fragment):
+            fixtures.adapter.ingest(fixtures.minimal_valid_native)
 
 
 @pytest.mark.parametrize("fixtures", PROVIDERS, ids=_id)

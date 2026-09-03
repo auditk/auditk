@@ -21,8 +21,14 @@ from auditk.adapters.generic_otel import GENERIC_OTEL_HEALTH_DECLARATION, OtelTr
 from auditk.adapters.health import CLAUDE_CODE_HEALTH_DECLARATION
 from auditk.adapters.hermes import HERMES_HEALTH_DECLARATION, HermesTraceAdapter
 from auditk.adapters.langgraph import LANGGRAPH_HEALTH_DECLARATION, LangGraphTraceAdapter
+from auditk.adapters.pi import PiTraceAdapter
 from auditk.schema import ActionType, Trace
-from tests.conformance.kit import AdapterConformanceFixtures, HealthFixture, RedactionFixture
+from tests.conformance.kit import (
+    AdapterConformanceFixtures,
+    HealthFixture,
+    RedactionFixture,
+    RefusingAdapterFixtures,
+)
 
 # --- claude-code --------------------------------------------------------
 # Native format: a list of parsed Claude Code JSONL event dicts. Helpers
@@ -456,3 +462,27 @@ _HERMES = AdapterConformanceFixtures(
 
 
 PROVIDERS: list[AdapterConformanceFixtures] = [_CLAUDE_CODE, _LANGGRAPH, _GENERIC_OTEL, _HERMES]
+
+
+# --- pi (gated stub) -----------------------------------------------------
+# Not a real adapter -- see auditk.adapters.pi / docs/pi-format-notes.md.
+# Every ingest() call refuses loudly regardless of `raw`, so this is a
+# RefusingAdapterFixtures, not an AdapterConformanceFixtures (see that
+# dataclass's docstring in kit.py for why the two can't share a shape).
+# Native inputs below are intentionally varied (empty, malformed, and a
+# minimal-valid-*looking* Pi-ish shape) to prove the refusal really is
+# input-shape-independent, not an accident of one particular fixture.
+
+_PI = RefusingAdapterFixtures(
+    name="pi",
+    adapter=PiTraceAdapter(),
+    empty_native=[],
+    malformed_native={"not": "a list of session entries"},
+    minimal_valid_native=[
+        {"type": "session", "version": 3, "id": "sess-1", "timestamp": "2026-01-01T00:00:00Z"},
+        {"type": "message", "id": "a1", "parentId": None, "message": {"role": "user"}},
+    ],
+    expected_message_fragment="gated on sample traces",
+)
+
+REFUSING_PROVIDERS: list[RefusingAdapterFixtures] = [_PI]

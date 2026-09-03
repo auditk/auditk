@@ -73,6 +73,35 @@ class HealthFixture:
 
 
 @dataclass(frozen=True)
+class RefusingAdapterFixtures:
+    """A stub adapter that refuses on every entry point, regardless of input
+    shape -- e.g. the Pi adapter, gated on sample traces (see
+    docs/pi-format-notes.md).
+
+    Deliberately NOT an `AdapterConformanceFixtures`: that shape's
+    `TestMinimalValidIngest` case asserts `ingest()` succeeds on
+    `minimal_valid_native`, which a loud-refusing stub by definition never
+    does. `providers.REFUSING_PROVIDERS` is this dataclass's own
+    parametrisation list, checked by a separate test class in
+    `test_conformance.py` that asserts the OPPOSITE invariant from the
+    normal suite: every case refuses, with the expected message, every
+    time -- including a `minimal_valid_native`-shaped input, which is
+    exactly the point (proves the refusal isn't conditional on input shape
+    at all). Flipping a stub to a real adapter later means consciously
+    deleting its entry here and adding a normal `AdapterConformanceFixtures`
+    to `PROVIDERS` instead, which forces rewriting these assertions rather
+    than letting a real adapter silently inherit "always refuses".
+    """
+
+    name: str
+    adapter: TraceAdapter
+    empty_native: Any
+    malformed_native: Any
+    minimal_valid_native: Any
+    expected_message_fragment: str
+
+
+@dataclass(frozen=True)
 class AdapterConformanceFixtures:
     """One adapter's opt-in into the conformance kit.
 
