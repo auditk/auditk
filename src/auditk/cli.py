@@ -93,6 +93,29 @@ def _to_subagent_health_inputs(transcripts: list[Any]) -> list[Any]:
     return [SubagentHealthInput(agent_id=t.agent_id, events=t.events) for t in transcripts]
 
 
+def _load_session_events(in_path: Path) -> Any:
+    """Read and parse a session input file (``.jsonl`` or anything else as
+    plain JSON) for ``ingest``/``report``, under the same refuse-don't-raise
+    contract the adapter layer already follows (docs/adapters.md): a missing
+    or unreadable file, or non-JSON content, surfaces a clean one-line
+    ``Error: `` message and exit 1 instead of a raw traceback. This step
+    runs *before* adapter dispatch, so it is the first edge the
+    external-testing quickstart audience hits (e.g. ``--in README.md``).
+    """
+    try:
+        text = in_path.read_text()
+    except OSError as exc:
+        typer.echo(f"Error: cannot read input file {in_path}: {exc.strerror or exc}")
+        raise typer.Exit(1) from None
+    try:
+        if in_path.suffix == ".jsonl":
+            return [json.loads(line) for line in text.splitlines() if line.strip()]
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        typer.echo(f"Error: input file {in_path} is not valid JSON: {exc}")
+        raise typer.Exit(1) from None
+
+
 @app.command()
 def ingest(
     adapter: str = typer.Option(..., help="Adapter name (e.g. claude-code)."),
@@ -105,10 +128,7 @@ def ingest(
     from auditk.adapters.claude_code import ingest_claude_code_session
 
     in_path = Path(in_file)
-    if in_path.suffix == ".jsonl":
-        events = [json.loads(line) for line in in_path.read_text().splitlines() if line.strip()]
-    else:
-        events = json.loads(in_path.read_text())
+    events = _load_session_events(in_path)
 
     if adapter == "claude-code":
         subagents = _discover_sibling_subagents(in_path)
@@ -265,10 +285,7 @@ def report(
         raise typer.Exit(1)
 
     in_path = Path(in_file)
-    if in_path.suffix == ".jsonl":
-        events = [json.loads(line) for line in in_path.read_text().splitlines() if line.strip()]
-    else:
-        events = json.loads(in_path.read_text())
+    events = _load_session_events(in_path)
 
     if adapter == "claude-code":
         plan_tasks_list = load_plan_tasks(Path(plan_tasks)) if plan_tasks else None
