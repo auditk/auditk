@@ -4,6 +4,7 @@
 Each task is a fixed, repeatable code-audit prompt with a pinned fixture.
 Three seeds (baseline, reversed, distractor) test plan robustness.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

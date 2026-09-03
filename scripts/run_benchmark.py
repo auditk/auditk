@@ -6,7 +6,9 @@ Environment variables required for real runs:
   ANTHROPIC_API_KEY, FIREWORKS_API_KEY,
   RUN_NLI_MODEL=1, RUN_JUDGE_MODEL=1
 """
+
 from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -14,6 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
 from auditk.benchmark.runner import AnthropicBenchmarkRunner, BenchmarkRunner
 from auditk.benchmark.task import BENCHMARK_TASKS
 
@@ -209,10 +212,7 @@ def main() -> int:
     print("\n=== Summary ===")
     print(f"{'Model':<12} {'Seed':<12} {'Drift':<10} {'Flagged':<8}")
     for r in results:
-        print(
-            f"{r['model']:<12} {r['seed']:<12} "
-            f"{r['drift_score']:<10} {r['flagged_steps']:<8}"
-        )
+        print(f"{r['model']:<12} {r['seed']:<12} {r['drift_score']:<10} {r['flagged_steps']:<8}")
     summary_path = output_dir / "summary.json"
     summary_path.write_text(json.dumps(results, indent=2))
     print(f"\nSummary saved → {summary_path}")

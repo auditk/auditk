@@ -5,9 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -44,11 +42,13 @@ class TestClaudeHook:
                 "AGENT_PROVENANCE_PATH": str(provenance),
             }
             # Mock stdin with SessionEnd JSON input
-            stdin_input = json.dumps({
-                "event": "SessionEnd",
-                "session_id": "sess-cc-12345",
-                "messages": [{"role": "user", "content": "Hello Claude"}],
-            })
+            stdin_input = json.dumps(
+                {
+                    "event": "SessionEnd",
+                    "session_id": "sess-cc-12345",
+                    "messages": [{"role": "user", "content": "Hello Claude"}],
+                }
+            )
             result = subprocess.run(
                 ["bash", str(CLAUDE_HOOK)],
                 input=stdin_input,
@@ -180,25 +180,32 @@ class TestCorrelateScript:
 
             # Write provenance
             provenance.write_text(
-                json.dumps({
-                    "session_id": "sess-001",
-                    "agent": "claude-code",
-                    "model": "claude-sonnet-4",
-                    "project": "auditk",
-                    "branch": "main",
-                    "recent_commits": ["abc123 fix bug"],
-                    "timestamp": "2026-06-07T12:00:00Z",
-                    "first_message": "Hello",
-                }) + "\n"
+                json.dumps(
+                    {
+                        "session_id": "sess-001",
+                        "agent": "claude-code",
+                        "model": "claude-sonnet-4",
+                        "project": "auditk",
+                        "branch": "main",
+                        "recent_commits": ["abc123 fix bug"],
+                        "timestamp": "2026-06-07T12:00:00Z",
+                        "first_message": "Hello",
+                    }
+                )
+                + "\n"
             )
 
             # Write a pack file with matching session_id
             pack = packs_dir / "sess-001_pack.json"
-            pack.write_text(json.dumps({
-                "session_id": "sess-001",
-                "drift_score": 0.15,
-                "flagged": False,
-            }))
+            pack.write_text(
+                json.dumps(
+                    {
+                        "session_id": "sess-001",
+                        "drift_score": 0.15,
+                        "flagged": False,
+                    }
+                )
+            )
 
             env = {
                 **os.environ,
@@ -224,11 +231,15 @@ class TestCorrelateScript:
             packs_dir = Path(tmpdir) / "benchmark_results" / "real_sessions"
             packs_dir.mkdir(parents=True)
             pack = packs_dir / "sess-002_pack.json"
-            pack.write_text(json.dumps({
-                "session_id": "sess-002",
-                "drift_score": 0.25,
-                "flagged": True,
-            }))
+            pack.write_text(
+                json.dumps(
+                    {
+                        "session_id": "sess-002",
+                        "drift_score": 0.25,
+                        "flagged": True,
+                    }
+                )
+            )
 
             env = {
                 **os.environ,
@@ -253,23 +264,30 @@ class TestCorrelateScript:
             packs_dir.mkdir(parents=True)
 
             provenance.write_text(
-                json.dumps({
-                    "session_id": "sess-003",
-                    "agent": "hermes",
-                    "model": "kimi-k2p6",
-                    "project": "glasshouse",
-                    "branch": "dev",
-                    "recent_commits": ["def456 add feat"],
-                    "timestamp": "2026-06-07T13:00:00Z",
-                }) + "\n"
+                json.dumps(
+                    {
+                        "session_id": "sess-003",
+                        "agent": "hermes",
+                        "model": "kimi-k2p6",
+                        "project": "glasshouse",
+                        "branch": "dev",
+                        "recent_commits": ["def456 add feat"],
+                        "timestamp": "2026-06-07T13:00:00Z",
+                    }
+                )
+                + "\n"
             )
 
             pack = packs_dir / "sess-003_pack.json"
-            pack.write_text(json.dumps({
-                "session_id": "sess-003",
-                "drift_score": 0.05,
-                "flagged": False,
-            }))
+            pack.write_text(
+                json.dumps(
+                    {
+                        "session_id": "sess-003",
+                        "drift_score": 0.05,
+                        "flagged": False,
+                    }
+                )
+            )
 
             env = {
                 **os.environ,

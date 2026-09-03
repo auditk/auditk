@@ -4,7 +4,6 @@ Tests BenchmarkSessionAdapter: OpenAI-compatible message dicts → Trace.
 """
 
 from datetime import datetime
-from uuid import UUID
 
 import pytest
 
@@ -13,8 +12,6 @@ from auditk.schema import (
     ActionType,
     Actor,
     FlowType,
-    Step,
-    Trace,
 )
 
 
@@ -76,9 +73,7 @@ def test_adapter_ingest_empty_raises(adapter: BenchmarkSessionAdapter) -> None:
 
 
 def test_adapter_trace_has_correct_metadata(adapter: BenchmarkSessionAdapter) -> None:
-    messages = [
-        {"role": "user", "content": "Hello", "session_id": "sess-001"}
-    ]
+    messages = [{"role": "user", "content": "Hello", "session_id": "sess-001"}]
     trace = adapter.ingest(messages)
     assert trace.source_adapter == "benchmark-api"
     assert trace.flow_type == FlowType.CODE

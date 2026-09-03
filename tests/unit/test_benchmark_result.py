@@ -3,12 +3,11 @@
 Tests the BenchmarkResult dataclass and its fields.
 """
 
-import pytest
+from datetime import UTC, datetime
 
 from auditk.benchmark.result import BenchmarkResult
-from auditk.benchmark.task import BenchmarkTask, BENCHMARK_TASKS
-from auditk.schema import Trace, FlowType, ActionType, Actor, Action, Step
-from datetime import datetime, UTC
+from auditk.benchmark.task import BENCHMARK_TASKS
+from auditk.schema import Action, ActionType, Actor, FlowType, Step, Trace
 
 
 def _make_dummy_trace() -> Trace:

@@ -24,13 +24,20 @@ raises):
 - **Per-session** (cheap, no magic number, always run regardless of corpus
   size): (a) a session's tool-call / tool-result counts should balance,
   after excluding calls still legitimately in flight when the transcript
-  capture simply ends (see ``_trailing_in_flight_call_count`` -- a real
+  capture simply ends. Where every call/result carries an id (real Claude
+  Code transcripts do: ``tool_use.id`` / ``tool_result.tool_use_id``),
+  results are paired to calls by id and "in flight" gets an exact
+  definition (see ``_unresolved_call_count_by_id``); id-less input (a real
   "clean" fixture used across several other test modules ends exactly this
-  way, which is how the naive "raw counts must be equal, no exceptions"
-  version of this check was caught false-positiving during GREEN-phase
-  implementation and corrected); (b) the share of a session's records whose
-  ``type`` is outside ``KNOWN_RECORD_TYPES`` should not exceed
-  ``max_unhandled_type_share``.
+  way) falls back to the coarser, type/count-only
+  ``_trailing_in_flight_call_count`` heuristic -- which is how the naive
+  "raw counts must be equal, no exceptions" version of this check was
+  caught false-positiving during GREEN-phase implementation and corrected,
+  and later how a doctor false breach on trailing *parallel* calls (two
+  calls, one resolved, capture truncated before the other's result) was
+  caught and fixed by adding id-matching on top; (b) the share of a
+  session's records whose ``type`` is outside ``KNOWN_RECORD_TYPES`` should
+  not exceed ``max_unhandled_type_share``.
 
 On ``KNOWN_RECORD_TYPES``: real corpus data shows a Claude Code parent
 transcript contains far more record types than ``user``/``assistant`` --
@@ -168,6 +175,23 @@ def _tool_result_blocks(event: dict[str, Any]) -> list[dict[str, Any]]:
     return [b for b in content if isinstance(b, dict) and b.get("type") == "tool_result"]
 
 
+def _tool_use_id(block: dict[str, Any]) -> str | None:
+    """The `id` of a `tool_use` block (`"toolu_..."` in real transcripts),
+    or None if absent/falsy -- which of the pairing strategies below
+    applies is decided entirely by whether every call/result in a session
+    has one of these, so this returning None for even one block is what
+    triggers the id-less fallback in `_unresolved_call_count_by_id`."""
+    value = block.get("id")
+    return str(value) if value else None
+
+
+def _tool_result_ref_id(block: dict[str, Any]) -> str | None:
+    """The `tool_use_id` a `tool_result` block claims to resolve, or None
+    if absent/falsy."""
+    value = block.get("tool_use_id")
+    return str(value) if value else None
+
+
 def _session_anchor_tool_names(events: list[dict[str, Any]]) -> set[str]:
     """Which known plan-anchor tool names this session actually calls."""
     found: set[str] = set()
@@ -218,6 +242,16 @@ def _trailing_in_flight_call_count(events: list[dict[str, Any]]) -> int:
     tool_use call that some LATER event skipped past without ever
     delivering its result -- i.e. one that is NOT part of this trailing,
     still-in-flight run -- counts as a genuine pairing breach below.
+
+    ID-LESS FALLBACK ONLY as of the id-matched pairing fix: this coarse,
+    type/count-only heuristic can't tell "two trailing parallel calls, one
+    resolved" apart from "an orphaned call followed by an unrelated,
+    separately-resolved one" -- both reduce to the same
+    `[assistant(call), assistant(call), user(N results)]` shape (see
+    `_unresolved_call_count_by_id`'s docstring for the concrete case this
+    caused). `_check_session` only reaches for this function when
+    `_unresolved_call_count_by_id` returns None, i.e. the session's
+    tool_use/tool_result blocks don't reliably carry ids to match by.
     """
     trailing = 0
     for event in reversed(events):
@@ -226,6 +260,60 @@ def _trailing_in_flight_call_count(events: list[dict[str, Any]]) -> int:
         if event.get("type") == "assistant":
             trailing += len(_tool_use_blocks(event))
     return trailing
+
+
+def _unresolved_call_count_by_id(events: list[dict[str, Any]]) -> int | None:
+    """Genuine (non-trailing) unresolved tool_use call count, pairing each
+    call to its result by id -- or None if this session can't be reliably
+    id-matched (any tool_use or tool_result block is missing its id), which
+    tells `_check_session` to fall back to `_trailing_in_flight_call_count`'s
+    coarser, count-only heuristic instead.
+
+    This is the fix for a real doctor false breach: a live session's tail
+    was `assistant(tool_use: WebSearch), assistant(tool_use: WebFetch),
+    user(tool_result for the WebSearch call)` -- two trailing parallel
+    calls, one resolved, capture truncated before the second's result
+    arrived. `_trailing_in_flight_call_count` walks in reverse and stops at
+    the FIRST `user` event, so it excused nothing here (that event wasn't
+    an unbroken run of `assistant` events) and the still-open WebFetch call
+    false-breached. But nothing in `_trailing_in_flight_call_count`'s
+    type/count-only view can tell that shape apart from a genuinely
+    orphaned call followed by an unrelated, separately-resolved one --
+    both are `[assistant(call), assistant(call), user(1 result)]`. Real
+    transcripts carry enough to resolve the ambiguity: `tool_use` blocks
+    have `id`, `tool_result` blocks have `tool_use_id` naming which call
+    they resolve (confirmed against a live Claude Code session's raw
+    JSONL). Once results are matched to calls by id rather than by
+    position/count, "trailing in-flight" gets an exact definition: a call
+    is excused iff it is unresolved AND no call issued at-or-after it ever
+    gets a tool_result anywhere in the transcript -- i.e. the maximal
+    SUFFIX of the issuance-ordered call list that is entirely unresolved.
+    Any unresolved call before that suffix has a LATER call that DID get
+    resolved, meaning the capture plainly kept going after it -- a genuine,
+    mid-transcript pairing breach, not truncation.
+    """
+    call_ids: list[str | None] = [
+        _tool_use_id(block) for event in events for block in _tool_use_blocks(event)
+    ]
+    if not call_ids or any(call_id is None for call_id in call_ids):
+        return None
+
+    result_ref_ids: list[str | None] = [
+        _tool_result_ref_id(block) for event in events for block in _tool_result_blocks(event)
+    ]
+    if any(ref_id is None for ref_id in result_ref_ids):
+        return None
+
+    resolved_ids = set(result_ref_ids)
+    unresolved_flags = [call_id not in resolved_ids for call_id in call_ids]
+
+    trailing_excused = 0
+    for is_unresolved in reversed(unresolved_flags):
+        if not is_unresolved:
+            break
+        trailing_excused += 1
+
+    return sum(unresolved_flags) - trailing_excused
 
 
 def _check_subagent(
@@ -283,8 +371,15 @@ def _check_session(
 
     calls, results = _session_tool_call_result_counts(session.events)
     if calls != results:
-        trailing = _trailing_in_flight_call_count(session.events)
-        unresolved = (calls - results) - trailing
+        unresolved = _unresolved_call_count_by_id(session.events)
+        if unresolved is None:
+            # Id-less fallback (see _unresolved_call_count_by_id's
+            # docstring): can't pair by id, so fall back to the coarser
+            # type/count-only trailing heuristic.
+            trailing = _trailing_in_flight_call_count(session.events)
+            unresolved = (calls - results) - trailing
+        else:
+            trailing = (calls - results) - unresolved
         if unresolved > 0:
             breaches.append(
                 f"{label}: tool-call/tool-result mismatch: {calls} tool-call(s) vs "

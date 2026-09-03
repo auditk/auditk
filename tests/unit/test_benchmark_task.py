@@ -3,10 +3,7 @@
 Tests the BenchmarkTask dataclass and the BENCHMARK_TASKS fixture list.
 """
 
-import pytest
-
-from auditk.benchmark.task import BenchmarkTask, BENCHMARK_TASKS
-
+from auditk.benchmark.task import BENCHMARK_TASKS, BenchmarkTask
 
 _FULL_TOOL_SET = {"ReadFile", "WriteFile", "TodoWrite", "Report"}
 
@@ -45,7 +42,9 @@ def test_benchmark_tasks_tools_are_subset_of_full_tool_set() -> None:
 
 def test_benchmark_tasks_all_prompts_start_with_todo_write() -> None:
     for task in BENCHMARK_TASKS:
-        assert "TodoWrite" in task.user_prompt, f"{task.task_id}: user_prompt must mention TodoWrite"
+        assert "TodoWrite" in task.user_prompt, (
+            f"{task.task_id}: user_prompt must mention TodoWrite"
+        )
 
 
 def test_baseline_task_has_correct_id_and_name() -> None:
@@ -73,7 +72,10 @@ def test_baseline_task_mentions_planning_first() -> None:
 
 def test_reversed_task_mentions_write_report_first() -> None:
     reversed_task = next(t for t in BENCHMARK_TASKS if t.seed == "reversed")
-    assert "write" in reversed_task.user_prompt.lower() and "report" in reversed_task.user_prompt.lower()
+    assert (
+        "write" in reversed_task.user_prompt.lower()
+        and "report" in reversed_task.user_prompt.lower()
+    )
 
 
 def test_distractor_task_mentions_distractor_file() -> None:

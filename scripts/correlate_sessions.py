@@ -3,12 +3,13 @@
 
 import json
 import os
-import sys
 from pathlib import Path
 
 
 def main() -> None:
-    provenance_path = Path(os.environ.get("AGENT_PROVENANCE_PATH", Path.home() / ".agent_provenance.jsonl"))
+    provenance_path = Path(
+        os.environ.get("AGENT_PROVENANCE_PATH", Path.home() / ".agent_provenance.jsonl")
+    )
     pack_dir = Path(os.environ.get("PACK_DIR", "benchmark_results/real_sessions"))
 
     # Load provenance entries
@@ -31,7 +32,18 @@ def main() -> None:
     all_ids = sorted(set(provenance.keys()) | set(packs.keys()))
 
     # Print header
-    print(f"{'session_id':<16} | {'agent':<12} | {'model':<20} | {'project':<12} | {'branch':<10} | {'recent_commits':<20} | {'drift_score':<12} | {'flagged':<8} | {'timestamp'}")
+    header_cols = [
+        f"{'session_id':<16}",
+        f"{'agent':<12}",
+        f"{'model':<20}",
+        f"{'project':<12}",
+        f"{'branch':<10}",
+        f"{'recent_commits':<20}",
+        f"{'drift_score':<12}",
+        f"{'flagged':<8}",
+        "timestamp",
+    ]
+    print(" | ".join(header_cols))
     print("-" * 160)
 
     for sid in all_ids:
@@ -50,7 +62,18 @@ def main() -> None:
         drift_score = pack.get("drift_score", "N/A")
         flagged = pack.get("flagged", "N/A")
 
-        print(f"{sid:<16} | {agent:<12} | {model:<20} | {project:<12} | {branch:<10} | {recent_commits:<20} | {str(drift_score):<12} | {str(flagged):<8} | {timestamp}")
+        row_cols = [
+            f"{sid:<16}",
+            f"{agent:<12}",
+            f"{model:<20}",
+            f"{project:<12}",
+            f"{branch:<10}",
+            f"{recent_commits:<20}",
+            f"{str(drift_score):<12}",
+            f"{str(flagged):<8}",
+            timestamp,
+        ]
+        print(" | ".join(row_cols))
 
 
 if __name__ == "__main__":
