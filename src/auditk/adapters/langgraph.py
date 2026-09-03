@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from auditk.adapters.redaction import ContentKeysByActionType, redact_trace
 from auditk.schema import (
     Action,
     ActionType,
@@ -19,6 +20,17 @@ from auditk.schema import (
     Step,
     Trace,
 )
+
+# Redaction pass-through (P1b gap 1): a LangGraph TOOL_CALL step's payload
+# is `{"node": node_name, "writes": node_writes}` (see `_classify_action`)
+# -- `node` is a graph-defined name (structural, survives), `writes` is
+# the node's actual output and the only place sensitive content can live.
+# UTTERANCE (the `respond` node's own AI message) is deliberately NOT
+# listed here, mirroring Claude Code's own redaction: narration survives,
+# only tool-call-shaped content is stripped.
+REDACTION_CONTENT_KEYS: ContentKeysByActionType = {
+    ActionType.TOOL_CALL: frozenset({"writes"}),
+}
 
 
 def _get_thread_id(checkpoint_dict: dict[str, Any]) -> str:
@@ -123,7 +135,19 @@ def ingest_checkpoints(checkpoints: list[dict[str, Any]]) -> Trace:
 
 
 class LangGraphTraceAdapter:
-    """Adapter class wrapping ingest_checkpoints for protocol compliance."""
+    """Adapter class wrapping ingest_checkpoints for protocol compliance.
+
+    Set ``strip_payloads=True`` to redact TOOL_CALL steps' ``writes``
+    payload via the shared post-ingest redaction pass
+    (`auditk.adapters.redaction.redact_trace`) -- the LangGraph half of
+    closing P1b's gap 1 (redaction pass-through was Claude-Code-only).
+    """
+
+    def __init__(self, strip_payloads: bool = False) -> None:
+        self.strip_payloads = strip_payloads
 
     def ingest(self, raw: Any) -> Trace:
-        return ingest_checkpoints(raw)
+        trace = ingest_checkpoints(raw)
+        if self.strip_payloads:
+            trace = redact_trace(trace, REDACTION_CONTENT_KEYS)
+        return trace

@@ -10,6 +10,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+from auditk.adapters.redaction import ContentKeysByActionType, redact_trace
 from auditk.schema import (
     Action,
     ActionType,
@@ -19,6 +20,17 @@ from auditk.schema import (
     Step,
     Trace,
 )
+
+# Redaction pass-through (P1b gap 1): a TOOL/RETRIEVER span's TOOL_CALL
+# payload is `{"name": span_name, "input": input_val, "output": output_val}`
+# (see `_infer_action`) -- `name` is structural (survives), `input`/
+# `output` are the span's actual content. LLM spans' UTTERANCE payload
+# (`{"input": ..., "output": ...}`) is deliberately NOT listed here,
+# mirroring Claude Code's own redaction: narration survives, only
+# tool-call-shaped content is stripped.
+REDACTION_CONTENT_KEYS: ContentKeysByActionType = {
+    ActionType.TOOL_CALL: frozenset({"input", "output"}),
+}
 
 
 def _infer_flow_type(span_kind: str) -> FlowType:
@@ -165,7 +177,19 @@ def ingest_otel_spans(spans: list[dict[str, Any]]) -> Trace:
 
 
 class OtelTraceAdapter:
-    """Structural implementation of TraceAdapter for OTel/OpenInference spans."""
+    """Structural implementation of TraceAdapter for OTel/OpenInference spans.
+
+    Set ``strip_payloads=True`` to redact TOOL_CALL steps' ``input``/
+    ``output`` payload via the shared post-ingest redaction pass
+    (`auditk.adapters.redaction.redact_trace`) -- the generic-otel half of
+    closing P1b's gap 1 (redaction pass-through was Claude-Code-only).
+    """
+
+    def __init__(self, strip_payloads: bool = False) -> None:
+        self.strip_payloads = strip_payloads
 
     def ingest(self, raw: Any) -> Trace:
-        return ingest_otel_spans(raw)
+        trace = ingest_otel_spans(raw)
+        if self.strip_payloads:
+            trace = redact_trace(trace, REDACTION_CONTENT_KEYS)
+        return trace

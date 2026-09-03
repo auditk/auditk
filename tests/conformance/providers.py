@@ -18,7 +18,7 @@ from typing import Any
 from auditk.adapters.claude_code import ClaudeCodeTraceAdapter
 from auditk.adapters.generic_otel import OtelTraceAdapter
 from auditk.adapters.langgraph import LangGraphTraceAdapter
-from auditk.schema import Trace
+from auditk.schema import ActionType, Trace
 from tests.conformance.kit import AdapterConformanceFixtures, HealthFixture, RedactionFixture
 
 # --- claude-code --------------------------------------------------------
@@ -143,6 +143,29 @@ def _lg_checkpoint(
     return checkpoint
 
 
+def _lg_redaction_fixture() -> RedactionFixture:
+    # A TOOL_CALL-shaped checkpoint (no "messages" key, not the "respond"
+    # node) -- see `_classify_action`. `node_writes` is the sensitive
+    # content; `node_name` ("run_sandbox_ls") is structural and must
+    # survive redaction untouched.
+    node_writes = {"result": "file1\nfile2", "cwd": "sandbox/"}
+    native = [_lg_checkpoint("ck-1", writes={"run_sandbox_ls": node_writes})]
+
+    def _assert_redacted(trace: Trace) -> None:
+        tool_call = next(s for s in trace.steps if s.action.type == ActionType.TOOL_CALL)
+        assert tool_call.action.payload["node"] == "run_sandbox_ls"
+        assert tool_call.action.payload["writes"] == {
+            "redacted": True,
+            "size": len(str(node_writes)),
+        }
+
+    return RedactionFixture(
+        redacting_adapter=LangGraphTraceAdapter(strip_payloads=True),
+        native=native,
+        assert_redacted=_assert_redacted,
+    )
+
+
 _LANGGRAPH = AdapterConformanceFixtures(
     name="langgraph",
     adapter=LangGraphTraceAdapter(),
@@ -155,10 +178,9 @@ _LANGGRAPH = AdapterConformanceFixtures(
             "ck-1", writes={"respond": {"messages": [{"type": "ai", "content": "hello"}]}}
         )
     ],
-    # No redaction hook: LangGraphTraceAdapter takes no constructor args and
-    # ingest_checkpoints has no strip-equivalent. No health hook either:
-    # check_adapter_health only understands the Claude-Code raw JSONL shape.
-    redaction=None,
+    redaction=_lg_redaction_fixture(),
+    # No health hook yet: check_adapter_health only understands the
+    # Claude-Code raw JSONL shape today (P1b gap 2, next commit).
     health=None,
 )
 
@@ -188,6 +210,35 @@ def _otel_span(
     }
 
 
+def _otel_redaction_fixture() -> RedactionFixture:
+    native = [
+        _otel_span(
+            "span-1",
+            kind="TOOL",
+            name="Bash",
+            attributes={"input.value": "ls sandbox/", "output.value": "file1\nfile2"},
+        )
+    ]
+
+    def _assert_redacted(trace: Trace) -> None:
+        tool_call = next(s for s in trace.steps if s.action.type == ActionType.TOOL_CALL)
+        assert tool_call.action.payload["name"] == "Bash"
+        assert tool_call.action.payload["input"] == {
+            "redacted": True,
+            "size": len("ls sandbox/"),
+        }
+        assert tool_call.action.payload["output"] == {
+            "redacted": True,
+            "size": len("file1\nfile2"),
+        }
+
+    return RedactionFixture(
+        redacting_adapter=OtelTraceAdapter(strip_payloads=True),
+        native=native,
+        assert_redacted=_assert_redacted,
+    )
+
+
 _GENERIC_OTEL = AdapterConformanceFixtures(
     name="generic-otel",
     adapter=OtelTraceAdapter(),
@@ -197,10 +248,8 @@ _GENERIC_OTEL = AdapterConformanceFixtures(
     # KeyError from _span_to_step).
     malformed_native=[{"trace_id": "trace-1", "start_time": "2026-01-01T00:00:00Z", "name": "x"}],
     minimal_valid_native=[_otel_span("span-1")],
-    # No redaction hook: OtelTraceAdapter takes no constructor args and
-    # ingest_otel_spans has no strip-equivalent. No health hook either, same
-    # reason as langgraph.
-    redaction=None,
+    redaction=_otel_redaction_fixture(),
+    # No health hook yet, same reason as langgraph (P1b gap 2, next commit).
     health=None,
 )
 

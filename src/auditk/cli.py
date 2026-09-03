@@ -113,7 +113,15 @@ def ingest(
             events, strip_payloads=strip_payloads, subagents=subagents
         )
     else:
-        trace_adapter = get_adapter(adapter)
+        # `strip_payloads` is now honoured generically (P1b gap 1): every
+        # registered adapter can redact, so this either does, or
+        # `get_adapter` refuses loudly -- `--strip-payloads` is never
+        # silently ignored again (see auditk.adapters.registry).
+        try:
+            trace_adapter = get_adapter(adapter, strip_payloads=strip_payloads)
+        except (KeyError, ValueError) as exc:
+            typer.echo(f"Error: {exc}")
+            raise typer.Exit(1) from None
         trace = trace_adapter.ingest(events)
 
     Path(out).write_text(trace.model_dump_json(indent=2))
