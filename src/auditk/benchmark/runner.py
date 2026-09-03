@@ -353,13 +353,14 @@ class AnthropicBenchmarkRunner(BenchmarkToolHarness):
         tools: list[dict[str, Any]],
         system: str,
     ) -> Any:
+        # No sampling params: the Messages API removed temperature on current
+        # models (400), and temperature=0 never guaranteed determinism anyway.
         return self.client.messages.create(
             model=self.model_id,
             messages=cast(Any, messages),
             tools=cast(Any, tools),
             system=system,
             max_tokens=4096,
-            temperature=0,
         )
 
     def run(self, task: BenchmarkTask) -> Trace:
