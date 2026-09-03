@@ -6,17 +6,23 @@ an adapter must map, what it must never invent, how redaction pass-through
 works, how to register an adapter, and how to check your work with the
 conformance kit.
 
-It is written against the three adapters shipped today —
+It is written against the four adapters shipped today —
 `src/auditk/adapters/claude_code.py`, `src/auditk/adapters/langgraph.py`,
-`src/auditk/adapters/generic_otel.py` — and describes their actual,
-current behaviour, not an aspirational one. An earlier version of this
-page called out two real contract gaps (redaction pass-through and the
-health canary both being Claude-Code-only) rather than glossing over
-them; P1b closed both — see "Redaction pass-through" and "The health
-canary" below for the design that replaced them, and the Conformance
-table for where a genuine per-format limitation (no call/result-id
-pairing concept in LangGraph or generic-otel) is now a documented,
-reasoned skip rather than a gap.
+`src/auditk/adapters/generic_otel.py`, `src/auditk/adapters/hermes.py` —
+and describes their actual, current behaviour, not an aspirational one.
+An earlier version of this page called out two real contract gaps
+(redaction pass-through and the health canary both being Claude-Code-only)
+rather than glossing over them; P1b closed both — see "Redaction
+pass-through" and "The health canary" below for the design that replaced
+them, and the Conformance table for where a genuine per-format limitation
+(no call/result-id pairing concept in LangGraph or generic-otel) is now a
+documented, reasoned skip rather than a gap. Hermes (added after P1b) is
+the second adapter, after Claude Code, whose native format carries real
+call/result ids and a real plan-anchor tool — see "The health canary"
+below — but it is also the clearest example yet of a *different* kind of
+documented gap: real ids for tool call/result pairing do not imply a real
+id for cross-session *delegation* linkage (see `hermes.py`'s module
+docstring and "Delegation / parent linkage" below).
 
 ## The shape you're producing
 
@@ -123,6 +129,30 @@ separately), model it the same way: join by whatever id the harness uses to
 link them, flatten with an explicit `parent_step_id`/`agent_id` marker, and
 mark the unmatched case rather than dropping it.
 
+Hermes *does* have a delegation concept (`delegate_task`, a child gets its
+own `sessions` row) but, unlike Claude Code, no id anywhere joins a
+specific `delegate_task` call to the child session(s) it spawned — the
+JSON returned to the parent never carries a child `session_id`, and a
+batched call's several children share one `parent_session_id` with
+nothing to disambiguate which task index produced which child (confirmed
+by reading `delegate_task`'s own return-value construction end to end,
+`hermes.py`'s module docstring). Per "No fabricated pairings" above, this
+is `hermes.py`'s reason to *never* attempt subagent-transcript stitching:
+every `delegate_task` step is marked `delegation_unobserved` unconditionally,
+and — unlike Claude Code's version of that marker — it can never be cleared
+from a single `ingest()` call, because no evidence available within one
+session's own message list could ever clear it. This is the delegation
+analogue of LangGraph/generic-otel's "no id-pairing concept" — except here
+it is specifically the *cross-session join*, not the call/result pairing
+itself (Hermes' own call/result pairing is real; see "The health canary"
+below), that has no id to key off.
+
+Hermes' `messages` table also carries no per-row parent-link column at all
+(no analogue of `parentUuid`/`parent_config`/`parent_span_id`) — the only
+structural chaining `hermes.py` can honestly populate is within one
+`assistant` row's own multiple `tool_calls` entries, the same chaining
+Claude Code does across multiple `tool_use` blocks in one message.
+
 ### The health hooks
 
 See "The health canary" below — a new adapter gets health checking by
@@ -189,6 +219,7 @@ original_value))`, or `0` for `None`):
 | claude-code | `TOOL_CALL`'s `input`, `ENV_EFFECT`'s `tool_result` | `claude_code.py:_maybe_redact`, applied inline at Step-construction time |
 | langgraph | `TOOL_CALL`'s `writes` | `redaction.py:redact_trace`, applied as a post-ingest pass |
 | generic-otel | `TOOL_CALL`'s `input`/`output` | `redaction.py:redact_trace`, applied as a post-ingest pass |
+| hermes | `TOOL_CALL`'s `input`, `ENV_EFFECT`'s `tool_result` | `redaction.py:redact_trace`, applied as a post-ingest pass |
 
 In every case `UTTERANCE` (narration / the LLM's own response) is
 deliberately left untouched — a model's stated intent is not the
@@ -236,6 +267,7 @@ _REGISTRY: dict[str, TraceAdapter] = {
     "generic-otel": OtelTraceAdapter(),
     "langgraph": LangGraphTraceAdapter(),
     "claude-code": ClaudeCodeTraceAdapter(),
+    "hermes": HermesTraceAdapter(),
 }
 ```
 
@@ -262,21 +294,29 @@ extractor callables plus supported/reason flags, one per sub-check:
   `Literal["input", "loop", "update", "fork"]`, see
   `langgraph.py:LANGGRAPH_HEALTH_DECLARATION`); generic-otel's is
   `attributes["openinference.span.kind"]` against the OpenInference spec's
-  own span-kind vocabulary (`generic_otel.py:GENERIC_OTEL_HEALTH_DECLARATION`).
-  All three support this check.
+  own span-kind vocabulary (`generic_otel.py:GENERIC_OTEL_HEALTH_DECLARATION`);
+  hermes's is `role` (`user`/`assistant`/`tool`/`session_meta` — the full
+  set observed on a live corpus, `hermes.py:HERMES_HEALTH_DECLARATION`).
+  All four support this check.
 - **call/result id-pairing**: `call_ids`/`result_ref_ids` per record, plus
-  `pairing_boundary` (the id-less fallback's trailing-call boundary). Only
-  Claude Code supports this: a `tool_use`/`tool_result` id pair is a real
-  concept in its native format. Neither LangGraph nor generic-otel has an
+  `pairing_boundary` (the id-less fallback's trailing-call boundary).
+  Claude Code and hermes both support this: a `tool_use`/`tool_result` id
+  pair is a real concept in Claude Code's native format, and so is a
+  `tool_calls[].id`/`tool_call_id` pair in Hermes' (see `hermes.py`'s
+  module docstring). Neither LangGraph nor generic-otel has an
   equivalent — a checkpoint records a node's writes *after* the node
   already ran, and an exported TOOL/RETRIEVER span already carries both
   its input and output as one record — so both declare
   `pairing_supported=False` with a reason, and the conformance suite
   SKIPs (not xfails, not fake-passes) that case for them.
 - **plan-anchor** (corpus-level, `doctor` only): `call_names` per record
-  plus `anchor_tool_names`. Only Claude Code supports this too — neither
-  format has a built-in plan-tracking-tool concept the way Claude Code's
-  harness does (`TodoWrite`/`TaskCreate`/`TaskUpdate`).
+  plus `anchor_tool_names`. Claude Code and hermes both support this too —
+  hermes' `todo` tool (`tools/todo_tool.py`) is a direct analogue of
+  Claude Code's `TodoWrite`/`TaskCreate`/`TaskUpdate`, and its items
+  always carry a real, agent-chosen id (no `TaskUpdate`-style positional
+  guesswork needed). LangGraph and generic-otel have no built-in
+  plan-tracking-tool concept the way Claude Code's or Hermes' harness
+  does.
 
 `check_adapter_health`'s default parameter value IS
 `CLAUDE_CODE_HEALTH_DECLARATION`, so every pre-P1b call site that doesn't
@@ -293,7 +333,7 @@ health declaration") rather than the check being silently skipped.
 session/plan-store/subagents discovery is inherently Claude-Code-shaped)
 and passes `CLAUDE_CODE_HEALTH_DECLARATION` explicitly for clarity.
 
-### Worked example: a hypothetical fourth adapter's declaration
+### Worked example: a hypothetical fifth adapter's declaration
 
 Say you're writing an adapter for a hypothetical `acme-agent` JSON-lines
 format where every record has a `"kind"` field from a small fixed set,
@@ -343,26 +383,26 @@ An adapter opts in by building one
 `empty_native`, `malformed_native`, `minimal_valid_native`; optional
 `redaction`/`health` fixtures are `None` when the adapter has no hook at
 all for that case, which the suite reflects as `xfail`, never a skip. As
-of P1b all three shipped adapters have both hooks, so no `xfail` is
-reachable for them today — `Optional` stays the shape so a fourth,
-out-of-tree adapter can still opt in before writing one. Within `health`,
-a hook may exist but say a sub-check's *concept* doesn't apply to this
-format (`HealthDeclaration.pairing_supported=False`, for example); the
+of the hermes adapter all four shipped adapters have both hooks, so no
+`xfail` is reachable for them today — `Optional` stays the shape so a
+fifth, out-of-tree adapter can still opt in before writing one. Within
+`health`, a hook may exist but say a sub-check's *concept* doesn't apply to
+this format (`HealthDeclaration.pairing_supported=False`, for example); the
 suite reflects that as a `pytest.skip()` carrying the declaration's own
 reason — a documented, reasoned skip, not an `xfail` and not a fake pass.
 `tests/conformance/providers.py` is the reference implementation of this
-for `claude-code`, `langgraph`, and `generic-otel`.
+for `claude-code`, `langgraph`, `generic-otel`, and `hermes`.
 
-| Case | claude-code | langgraph | generic-otel |
-|---|---|---|---|
-| empty-input refuses via `ValueError` | pass | pass | pass |
-| malformed-input refuses cleanly or processes best-effort (never an undocumented exception) | pass | pass | pass |
-| minimal-valid input ingests cleanly | pass | pass | pass |
-| redaction pass-through | pass | pass | pass |
-| health pairing invariants (id-matched + id-less) | pass | skip (no id-pairing concept) | skip (no id-pairing concept) |
-| health unknown-record-type-share | pass | pass | pass |
+| Case | claude-code | langgraph | generic-otel | hermes |
+|---|---|---|---|---|
+| empty-input refuses via `ValueError` | pass | pass | pass | pass |
+| malformed-input refuses cleanly or processes best-effort (never an undocumented exception) | pass | pass | pass | pass |
+| minimal-valid input ingests cleanly | pass | pass | pass | pass |
+| redaction pass-through | pass | pass | pass | pass |
+| health pairing invariants (id-matched + id-less) | pass | skip (no id-pairing concept) | skip (no id-pairing concept) | pass |
+| health unknown-record-type-share | pass | pass | pass | pass |
 
-If you're adding a fourth adapter: get every non-`xfail`/non-`skip` case
+If you're adding a fifth adapter: get every non-`xfail`/non-`skip` case
 above passing before calling it done. Reach for `pytest.xfail` only when
 you haven't written a hook yet at all; reach for the declaration-driven
 skip (`*_supported=False` + a reason) only when the concept genuinely
