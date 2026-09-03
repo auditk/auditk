@@ -93,14 +93,14 @@ def _to_subagent_health_inputs(transcripts: list[Any]) -> list[Any]:
     return [SubagentHealthInput(agent_id=t.agent_id, events=t.events) for t in transcripts]
 
 
-def _load_session_events(in_path: Path) -> Any:
-    """Read and parse a session input file (``.jsonl`` or anything else as
-    plain JSON) for ``ingest``/``report``, under the same refuse-don't-raise
-    contract the adapter layer already follows (docs/adapters.md): a missing
-    or unreadable file, or non-JSON content, surfaces a clean one-line
-    ``Error: `` message and exit 1 instead of a raw traceback. This step
-    runs *before* adapter dispatch, so it is the first edge the
-    external-testing quickstart audience hits (e.g. ``--in README.md``).
+def _load_json_input(in_path: Path) -> Any:
+    """Read and parse a user-supplied JSON input file (``.jsonl`` or anything
+    else as plain JSON) for ``ingest``/``report``/``attest``, under the same
+    refuse-don't-raise contract the adapter layer already follows
+    (docs/adapters.md): a missing or unreadable file, or non-JSON content,
+    surfaces a clean one-line ``Error: `` message and exit 1 instead of a raw
+    traceback. This step runs *before* adapter dispatch, so it is the first
+    edge the external-testing quickstart audience hits (e.g. ``--in README.md``).
     """
     try:
         text = in_path.read_text()
@@ -128,7 +128,7 @@ def ingest(
     from auditk.adapters.claude_code import ingest_claude_code_session
 
     in_path = Path(in_file)
-    events = _load_session_events(in_path)
+    events = _load_json_input(in_path)
 
     if adapter == "claude-code":
         subagents = _discover_sibling_subagents(in_path)
@@ -285,7 +285,7 @@ def report(
         raise typer.Exit(1)
 
     in_path = Path(in_file)
-    events = _load_session_events(in_path)
+    events = _load_json_input(in_path)
 
     if adapter == "claude-code":
         plan_tasks_list = load_plan_tasks(Path(plan_tasks)) if plan_tasks else None
@@ -476,29 +476,41 @@ def attest(
     ),
 ) -> None:
     """Build and sign an evidence pack from traces + optional probe results."""
+    from pydantic import ValidationError
+
     from auditk.attestation.pack import build
     from auditk.attestation.signer import LocalEd25519Signer, generate_keypair
     from auditk.schema import Issuer, ProbeResult, RiskTier, Subject, Trace
 
     traces_path = Path(traces)
-    if traces_path.suffix == ".jsonl":
-        trace_list = [
-            Trace.model_validate(json.loads(line))
-            for line in traces_path.read_text().splitlines()
-            if line.strip()
-        ]
-    else:
-        raw = json.loads(traces_path.read_text())
+    raw = _load_json_input(traces_path)
+    # Schema validation is still an input problem at this boundary (the file
+    # is user-supplied), so a ValidationError refuses on one line too --
+    # pydantic's own message is multi-line and reads as a traceback.
+    try:
         trace_list = (
             [Trace.model_validate(raw)]
             if isinstance(raw, dict)
             else [Trace.model_validate(item) for item in raw]
         )
+    except ValidationError as exc:
+        typer.echo(
+            f"Error: input file {traces_path} is not a valid trace: "
+            f"{exc.error_count()} validation error(s)"
+        )
+        raise typer.Exit(1) from None
 
     probe_results: list[ProbeResult] = []
     if probe_results_file:
-        raw_probes = json.loads(Path(probe_results_file).read_text())
-        probe_results = [ProbeResult.model_validate(r) for r in raw_probes]
+        raw_probes = _load_json_input(Path(probe_results_file))
+        try:
+            probe_results = [ProbeResult.model_validate(r) for r in raw_probes]
+        except ValidationError as exc:
+            typer.echo(
+                f"Error: input file {probe_results_file} is not a valid probe-results "
+                f"file: {exc.error_count()} validation error(s)"
+            )
+            raise typer.Exit(1) from None
 
     # Resolve private key path; generate if missing
     priv_key_path = Path(signer).with_suffix(".ed25519")
