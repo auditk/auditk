@@ -254,6 +254,24 @@ format, simply don't add it to `_FACTORIES`: the CLI will refuse loudly
 on `--strip-payloads` for it rather than silently proceeding as if the
 flag had no effect.
 
+## A gated stub: `pi`
+
+`src/auditk/adapters/pi.py` registers a `pi` adapter name, but it is not a
+real adapter — every `ingest()` call refuses loudly with
+`PiAdapterGatedError` ("Pi adapter is gated on sample traces supplied under
+explicit permission; see docs/pi-format-notes.md"). Pi (a prospective
+external tester's coding-agent harness) has publicly documented session
+format docs, but no real session trace has been read yet, and per this
+page's own discipline — every shipped adapter's format was "discovered by
+reading the writer source... not guessed from data alone" — public docs
+alone are not enough to write a parser against. See
+`docs/pi-format-notes.md` for what is provisionally known and the exact
+list of things a real sample needs to confirm before this stub becomes a
+real adapter. `pi` is deliberately excluded from the conformance kit's
+`PROVIDERS` list (its `TestMinimalValidIngest` case assumes success, which
+a loud-refusing stub never gives) — see `tests/conformance/providers.py`'s
+`REFUSING_PROVIDERS` for its own, separate always-refuses assertions.
+
 ## Registering an adapter
 
 `src/auditk/adapters/registry.py` has three flat name -> * maps: `_REGISTRY`

@@ -119,13 +119,17 @@ def ingest(
         # `strip_payloads` is now honoured generically (P1b gap 1): every
         # registered adapter can redact, so this either does, or
         # `get_adapter` refuses loudly -- `--strip-payloads` is never
-        # silently ignored again (see auditk.adapters.registry).
+        # silently ignored again (see auditk.adapters.registry). `ingest()`
+        # itself is inside the same try: a gated stub adapter (e.g. `pi`,
+        # see auditk.adapters.pi) raises ValueError from `ingest()`, not
+        # from `get_adapter()`, and must surface the same clean "Error: "
+        # refusal rather than an uncaught stack trace.
         try:
             trace_adapter = get_adapter(adapter, strip_payloads=strip_payloads)
+            trace = trace_adapter.ingest(events)
         except (KeyError, ValueError) as exc:
             typer.echo(f"Error: {exc}")
             raise typer.Exit(1) from None
-        trace = trace_adapter.ingest(events)
 
     Path(out).write_text(trace.model_dump_json(indent=2))
     typer.echo(f"Trace written to {out}: {len(trace.steps)} steps")
@@ -140,15 +144,26 @@ def _ingest_generic_adapter_report(adapter: str, events: list[Any], force: bool)
     declaration at all is reported as such (visibly) rather than the
     check being silently skipped with no trace of why.
 
-    Exits the process (`typer.Exit(1)`) on an un-forced breach; otherwise
+    `get_adapter`/`ingest()` are wrapped in a `try`: a gated stub adapter
+    (`pi`, see `auditk.adapters.pi`) raises `ValueError` from `ingest()`,
+    not from `get_adapter()`, and must surface the same clean "Error: "
+    refusal rather than an uncaught stack trace -- mirrors `ingest`'s own
+    non-claude-code branch above.
+
+    Exits the process (`typer.Exit(1)`) on an un-forced health breach, or on
+    a `KeyError`/`ValueError` from adapter lookup/ingestion; otherwise
     returns the ingested `Trace`.
     """
     from auditk.adapters import get_adapter
     from auditk.adapters.health import SessionHealthInput, check_adapter_health
     from auditk.adapters.registry import get_health_declaration
 
-    trace_adapter = get_adapter(adapter)
-    trace = trace_adapter.ingest(events)
+    try:
+        trace_adapter = get_adapter(adapter)
+        trace = trace_adapter.ingest(events)
+    except (KeyError, ValueError) as exc:
+        typer.echo(f"Error: {exc}")
+        raise typer.Exit(1) from None
 
     declaration = get_health_declaration(adapter)
     if declaration is None:
