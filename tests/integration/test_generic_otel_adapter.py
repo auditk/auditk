@@ -125,3 +125,12 @@ def test_empty_spans_raises() -> None:
     """ingest_otel_spans([]) must raise ValueError, not silently return."""
     with pytest.raises(ValueError, match="non-empty"):
         ingest_otel_spans([])
+
+
+def test_malformed_span_missing_required_field_raises_value_error() -> None:
+    """A span dict missing a required field (`span_id`) must refuse via a
+    documented ValueError, not leak a raw KeyError from `_span_to_step`."""
+    with pytest.raises(ValueError, match="malformed"):
+        ingest_otel_spans(
+            [{"trace_id": "t1", "start_time": "2026-01-01T00:00:00Z", "name": "root"}]
+        )

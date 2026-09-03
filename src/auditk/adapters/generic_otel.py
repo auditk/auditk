@@ -10,6 +10,8 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+from auditk.adapters.health import HealthDeclaration
+from auditk.adapters.redaction import ContentKeysByActionType, redact_trace
 from auditk.schema import (
     Action,
     ActionType,
@@ -19,6 +21,17 @@ from auditk.schema import (
     Step,
     Trace,
 )
+
+# Redaction pass-through (P1b gap 1): a TOOL/RETRIEVER span's TOOL_CALL
+# payload is `{"name": span_name, "input": input_val, "output": output_val}`
+# (see `_infer_action`) -- `name` is structural (survives), `input`/
+# `output` are the span's actual content. LLM spans' UTTERANCE payload
+# (`{"input": ..., "output": ...}`) is deliberately NOT listed here,
+# mirroring Claude Code's own redaction: narration survives, only
+# tool-call-shaped content is stripped.
+REDACTION_CONTENT_KEYS: ContentKeysByActionType = {
+    ActionType.TOOL_CALL: frozenset({"input", "output"}),
+}
 
 
 def _infer_flow_type(span_kind: str) -> FlowType:
@@ -137,15 +150,22 @@ def ingest_otel_spans(spans: list[dict[str, Any]]) -> Trace:
     if not spans:
         raise ValueError("spans must be non-empty")
 
-    root = _find_root_span(spans)
-    root_attrs: dict[str, Any] = root.get("attributes") or {}
-    trace_id: str = root["trace_id"]
+    try:
+        root = _find_root_span(spans)
+        root_attrs: dict[str, Any] = root.get("attributes") or {}
+        trace_id: str = root["trace_id"]
 
-    flow_type = _infer_flow_type(root_attrs.get("openinference.span.kind", ""))
-    agent_config_ref: str = root_attrs.get("session.id") or "unknown"
-    tenant_id: str | None = root_attrs.get("user.id") or None
+        flow_type = _infer_flow_type(root_attrs.get("openinference.span.kind", ""))
+        agent_config_ref: str = root_attrs.get("session.id") or "unknown"
+        tenant_id: str | None = root_attrs.get("user.id") or None
 
-    steps = [_span_to_step(span, trace_id) for span in spans]
+        steps = [_span_to_step(span, trace_id) for span in spans]
+    except (KeyError, TypeError, AttributeError) as exc:
+        # Refuse cleanly on malformed span data (a span dict missing a
+        # required field like `span_id`/`trace_id`/`start_time`/`name`, or a
+        # non-dict entry in `spans`) rather than letting an opaque, undocumented
+        # KeyError/TypeError/AttributeError leak from deep inside `_span_to_step`.
+        raise ValueError(f"malformed OTel span data: {exc}") from exc
 
     return Trace(
         trace_id=trace_id,
@@ -157,8 +177,83 @@ def ingest_otel_spans(spans: list[dict[str, Any]]) -> Trace:
     )
 
 
+# Health-canary declaration (P1b gap 2). `openinference.span.kind` is
+# OpenInference's own bounded span-kind vocabulary -- the direct analogue
+# of Claude Code's `KNOWN_RECORD_TYPES`: a span whose kind this adapter
+# has never seen is exactly the format-drift signal the canary exists to
+# catch (concretely, `_infer_action`'s dispatch above falls back to an
+# empty UTTERANCE for any kind outside this set -- silently, the same
+# failure mode `KNOWN_RECORD_TYPES`'s module docstring describes for
+# Claude Code's TodoWrite rename).
+#
+# Call/result id-pairing and plan-anchor tool-tracking have no equivalent
+# in this format (see docs/adapters.md): a TOOL/RETRIEVER span already
+# carries both its `input.value` and `output.value` as one record when
+# exported -- there is no separate "call issued, result pending" record
+# to pair -- and OpenInference has no span kind for a plan-tracking tool
+# call the way Claude Code's harness does. Both are declared unsupported
+# with a reason rather than faked.
+_OTEL_KNOWN_SPAN_KINDS: frozenset[str] = frozenset(
+    {
+        "CHAIN",
+        "RETRIEVER",
+        "RERANKER",
+        "LLM",
+        "EMBEDDING",
+        "TOOL",
+        "AGENT",
+        "GUARDRAIL",
+        "EVALUATOR",
+        "UNKNOWN",
+    }
+)
+_OTEL_PAIRING_SKIP_REASON = (
+    "OTel/OpenInference spans are exported after the operation they describe "
+    "completes: a TOOL span already carries both its input and output attributes "
+    "as one record, so there is no separate pending-call/result-id pair to check "
+    "(see docs/adapters.md's 'Known contract gaps')."
+)
+_OTEL_PLAN_ANCHOR_SKIP_REASON = (
+    "OpenInference spans have no plan-tracking span kind equivalent to Claude "
+    "Code's TodoWrite/TaskCreate/TaskUpdate."
+)
+
+
+def _otel_record_type(span: dict[str, Any]) -> str | None:
+    """`GENERIC_OTEL_HEALTH_DECLARATION.record_type`: a span's own
+    `attributes["openinference.span.kind"]`."""
+    if not isinstance(span, dict):
+        return None
+    attrs = span.get("attributes")
+    kind = attrs.get("openinference.span.kind") if isinstance(attrs, dict) else None
+    return str(kind) if kind else None
+
+
+GENERIC_OTEL_HEALTH_DECLARATION = HealthDeclaration(
+    name="generic-otel",
+    record_type=_otel_record_type,
+    known_record_types=_OTEL_KNOWN_SPAN_KINDS,
+    pairing_supported=False,
+    pairing_skip_reason=_OTEL_PAIRING_SKIP_REASON,
+    plan_anchor_supported=False,
+    plan_anchor_skip_reason=_OTEL_PLAN_ANCHOR_SKIP_REASON,
+)
+
+
 class OtelTraceAdapter:
-    """Structural implementation of TraceAdapter for OTel/OpenInference spans."""
+    """Structural implementation of TraceAdapter for OTel/OpenInference spans.
+
+    Set ``strip_payloads=True`` to redact TOOL_CALL steps' ``input``/
+    ``output`` payload via the shared post-ingest redaction pass
+    (`auditk.adapters.redaction.redact_trace`) -- the generic-otel half of
+    closing P1b's gap 1 (redaction pass-through was Claude-Code-only).
+    """
+
+    def __init__(self, strip_payloads: bool = False) -> None:
+        self.strip_payloads = strip_payloads
 
     def ingest(self, raw: Any) -> Trace:
-        return ingest_otel_spans(raw)
+        trace = ingest_otel_spans(raw)
+        if self.strip_payloads:
+            trace = redact_trace(trace, REDACTION_CONTENT_KEYS)
+        return trace

@@ -9,12 +9,15 @@ from __future__ import annotations
 import json
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 
 from auditk import __spec_version__, __version__
 from auditk.analysis.scorers import DEFAULT_SCORER, get_scorer
+
+if TYPE_CHECKING:
+    from auditk.schema import Trace
 
 app = typer.Typer(
     help="auditk — the open standard for agent alignment evidence.",
@@ -113,11 +116,82 @@ def ingest(
             events, strip_payloads=strip_payloads, subagents=subagents
         )
     else:
-        trace_adapter = get_adapter(adapter)
-        trace = trace_adapter.ingest(events)
+        # `strip_payloads` is now honoured generically (P1b gap 1): every
+        # registered adapter can redact, so this either does, or
+        # `get_adapter` refuses loudly -- `--strip-payloads` is never
+        # silently ignored again (see auditk.adapters.registry). `ingest()`
+        # itself is inside the same try: a gated stub adapter (e.g. `pi`,
+        # see auditk.adapters.pi) raises ValueError from `ingest()`, not
+        # from `get_adapter()`, and must surface the same clean "Error: "
+        # refusal rather than an uncaught stack trace.
+        try:
+            trace_adapter = get_adapter(adapter, strip_payloads=strip_payloads)
+            trace = trace_adapter.ingest(events)
+        except (KeyError, ValueError) as exc:
+            typer.echo(f"Error: {exc}")
+            raise typer.Exit(1) from None
 
     Path(out).write_text(trace.model_dump_json(indent=2))
     typer.echo(f"Trace written to {out}: {len(trace.steps)} steps")
+
+
+def _ingest_generic_adapter_report(
+    adapter: str, events: list[Any], force: bool, strip_payloads: bool
+) -> Trace:
+    """Ingest via a non-claude-code adapter for `report`, applying the same
+    adapter-health canary gate claude-code gets above (P1b gap 2): any
+    adapter with a `HealthDeclaration` (`registry.get_health_declaration`)
+    is checked and, on breach, refused unless `--force` -- exactly
+    claude-code's existing behaviour, generalised. An adapter with no
+    declaration at all is reported as such (visibly) rather than the
+    check being silently skipped with no trace of why.
+
+    `strip_payloads` is threaded through to `get_adapter` the same way
+    `ingest` already does (closes the gap `ingest` had --strip-payloads for
+    and `report` didn't -- see `report`'s own `--strip-payloads` help text
+    for the "findings that need payload content won't fire" trade-off this
+    implies for the findings engine).
+
+    `get_adapter`/`ingest()` are wrapped in a `try`: a gated stub adapter
+    (`pi`, see `auditk.adapters.pi`) raises `ValueError` from `ingest()`,
+    not from `get_adapter()`, and must surface the same clean "Error: "
+    refusal rather than an uncaught stack trace -- mirrors `ingest`'s own
+    non-claude-code branch above.
+
+    Exits the process (`typer.Exit(1)`) on an un-forced health breach, or on
+    a `KeyError`/`ValueError` from adapter lookup/ingestion (including an
+    adapter with no `--strip-payloads` support); otherwise returns the
+    ingested `Trace`.
+    """
+    from auditk.adapters import get_adapter
+    from auditk.adapters.health import SessionHealthInput, check_adapter_health
+    from auditk.adapters.registry import get_health_declaration
+
+    try:
+        trace_adapter = get_adapter(adapter, strip_payloads=strip_payloads)
+        trace = trace_adapter.ingest(events)
+    except (KeyError, ValueError) as exc:
+        typer.echo(f"Error: {exc}")
+        raise typer.Exit(1) from None
+
+    declaration = get_health_declaration(adapter)
+    if declaration is None:
+        typer.echo(
+            f"Note: adapter {adapter!r} has no health declaration -- "
+            "skipping the adapter-health check for this report."
+        )
+        return trace
+
+    health = check_adapter_health([SessionHealthInput(events=events)], declaration=declaration)
+    if not health.ok and not force:
+        typer.echo(
+            "Error: adapter health check failed -- refusing to emit a report "
+            "(pass --force to override):"
+        )
+        for breach in health.breaches:
+            typer.echo(f"  - {breach}")
+        raise typer.Exit(1)
+    return trace
 
 
 @app.command()
@@ -159,9 +233,22 @@ def report(
             "a report at all -- see 'auditk doctor'."
         ),
     ),
+    strip_payloads: bool = typer.Option(
+        False,
+        "--strip-payloads",
+        help=(
+            "Redact tool inputs and results before analysis, adapter-generic "
+            "(same mechanism as 'auditk ingest --strip-payloads'). Names, "
+            "kinds, ids, and timing still survive, so structural findings that "
+            "only need those (e.g. unobserved-delegation, error clusters) are "
+            "unaffected -- but findings that read payload content (e.g. "
+            "scope-escape file paths, command tripwires) cannot fire against "
+            "redacted payloads and will legitimately find less. Use this when "
+            "you want a report without exposing raw tool call/result content."
+        ),
+    ),
 ) -> None:
     """Produce a single-session post-mortem report (markdown or JSON)."""
-    from auditk.adapters import get_adapter
     from auditk.adapters.claude_code import ingest_claude_code_session, load_plan_tasks
     from auditk.adapters.health import SessionHealthInput, check_adapter_health
     from auditk.analysis.findings import analyze_trace
@@ -186,7 +273,9 @@ def report(
     if adapter == "claude-code":
         plan_tasks_list = load_plan_tasks(Path(plan_tasks)) if plan_tasks else None
         subagents = _discover_sibling_subagents(in_path)
-        trace = ingest_claude_code_session(events, plan_tasks=plan_tasks_list, subagents=subagents)
+        trace = ingest_claude_code_session(
+            events, strip_payloads, plan_tasks=plan_tasks_list, subagents=subagents
+        )
 
         # Phase 5 canary (Finding A): refuse to emit a report over a session
         # the adapter may have silently mis-parsed, rather than printing a
@@ -210,8 +299,7 @@ def report(
                 typer.echo(f"  - {breach}")
             raise typer.Exit(1)
     else:
-        trace_adapter = get_adapter(adapter)
-        trace = trace_adapter.ingest(events)
+        trace = _ingest_generic_adapter_report(adapter, events, force, strip_payloads)
 
     session_cwd = trace.metadata.get("cwd")
     start_dir = Path(session_cwd) if isinstance(session_cwd, str) and session_cwd else Path.cwd()
@@ -311,12 +399,22 @@ def doctor(
     Exits non-zero if the corpus-level invariant (or any per-session check)
     breaches.
     """
-    from auditk.adapters.health import PLAN_ANCHOR_TOOL_NAMES, check_adapter_health
+    from auditk.adapters.health import (
+        CLAUDE_CODE_HEALTH_DECLARATION,
+        PLAN_ANCHOR_TOOL_NAMES,
+        check_adapter_health,
+    )
 
     sessions, anchor_histogram = _load_corpus_sessions(
         Path(root), Path(tasks_root), PLAN_ANCHOR_TOOL_NAMES
     )
-    health = check_adapter_health(sessions)
+    # `doctor` only ever walks a Claude Code on-disk corpus (the session/
+    # plan-store/subagents layout `_load_corpus_sessions` discovers is
+    # Claude-Code-specific) -- passed explicitly here, per P1b gap 2, so
+    # the wiring doesn't rely on `check_adapter_health`'s default staying
+    # claude-code by coincidence. Behaviourally a no-op: this IS the
+    # default.
+    health = check_adapter_health(sessions, declaration=CLAUDE_CODE_HEALTH_DECLARATION)
 
     typer.echo(f"Sessions discovered: {len(sessions)}")
     typer.echo("Plan-anchor tool-call histogram:")

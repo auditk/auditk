@@ -52,10 +52,40 @@ generous allow-list of every type observed to date; a share of records
 outside it is what fires the breach. A new type crossing the threshold and
 firing IS the canary working as designed: a human triages it and, once
 confirmed benign, adds it here.
+
+Per-adapter declarations (P1b gap 2)
+-------------------------------------
+Until P1b, every function below read its ``events``/``SessionHealthInput``
+argument as raw Claude Code JSONL dicts, unconditionally --
+``event["type"]``, ``message.content[*].type in {"tool_use",
+"tool_result"}``, etc. That made the canary Claude-Code-shape-specific:
+``report``/``doctor`` could only ever wire it up for ``--adapter
+claude-code``; a LangGraph or generic-otel session got no pairing check,
+no unknown-record-type-share check, and no plan-anchor check at all.
+
+``HealthDeclaration`` (below) is the fix: every extraction the canary
+needs -- "what's this record's type, for the unknown-type-share check",
+"what call/result ids does this record carry, for the pairing check",
+"what does a plan-anchor tool call look like" -- is now a small set of
+callables + flags an adapter supplies, not something this module assumes.
+``check_adapter_health``'s ``declaration`` parameter defaults to
+``CLAUDE_CODE_HEALTH_DECLARATION``, which reproduces every check exactly
+as it behaved before P1b (same extraction, same ``KNOWN_RECORD_TYPES``,
+same id-pairing logic) -- every existing call site that doesn't pass a
+declaration is completely unaffected. ``LANGGRAPH_HEALTH_DECLARATION``
+(``adapters/langgraph.py``) and ``GENERIC_OTEL_HEALTH_DECLARATION``
+(``adapters/generic_otel.py``) are the other two shipped adapters' own
+declarations -- see those modules for what a genuine analogue of "record
+type" and "plan anchor" looks like in each format, and where one
+genuinely doesn't exist (``*_supported=False`` with a reason, a
+documented skip rather than a fake pass -- see
+``tests/conformance/test_conformance.py``'s pairing-invariant cases for
+both).
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -98,6 +128,71 @@ PLAN_ANCHOR_TOOL_NAMES = ("TodoWrite", "TaskCreate", "TaskUpdate")
 
 DEFAULT_MIN_CORPUS_SIZE = 20
 DEFAULT_MAX_UNHANDLED_TYPE_SHARE = 0.05
+
+
+@dataclass(frozen=True)
+class HealthDeclaration:
+    """One adapter's declaration of how `check_adapter_health` should read
+    its own native record shape (P1b gap 2 -- see the module docstring's
+    "Per-adapter declarations" section).
+
+    Every field is a pure, never-raising extractor over a single native
+    record dict (one element of a `SessionHealthInput.events` list) or a
+    flag/reason pair saying a given sub-check's concept doesn't exist in
+    this format at all:
+
+    - `record_type` / `known_record_types` / `unknown_type_share_supported`
+      feed the unknown-record-type-share check: `record_type(event)` is
+      compared against `known_record_types` (or the caller's
+      `handled_record_types` override, if given).
+    - `call_ids` / `result_ref_ids` / `pairing_supported` feed the
+      tool-call/tool-result pairing check: the ids one record's calls
+      carry, and the ids one record's results claim to resolve.
+      `pairing_boundary` is the id-LESS fallback's "a call issued before
+      this record is never trailing" boundary (Claude Code: any `user`
+      event, whether or not it carries a `tool_result` -- see
+      `_trailing_in_flight_call_count`'s docstring for why this must be a
+      full record-type boundary, not just "carries a result").
+    - `call_names` / `anchor_tool_names` / `plan_anchor_supported` feed the
+      corpus-level plan-anchor check: which of a record's call names (if
+      any) match this format's own plan-tracking tool vocabulary.
+
+    A sub-check whose concept doesn't apply to this format at all (see
+    docs/adapters.md) sets that sub-check's `*_supported=False` and a
+    `*_skip_reason` string explaining why -- `check_adapter_health` then
+    skips it entirely for this declaration (never a fake pass), and the
+    conformance kit surfaces the same skip with the same reason rather
+    than an `xfail`.
+    """
+
+    name: str
+
+    # -- unknown-record-type-share --
+    record_type: Callable[[dict[str, Any]], str | None]
+    known_record_types: frozenset[str]
+    unknown_type_share_supported: bool = True
+    unknown_type_share_skip_reason: str | None = None
+
+    # -- call/result id-pairing --
+    call_ids: Callable[[dict[str, Any]], list[str | None]] = field(
+        default=lambda _record: [], repr=False
+    )
+    result_ref_ids: Callable[[dict[str, Any]], list[str | None]] = field(
+        default=lambda _record: [], repr=False
+    )
+    pairing_boundary: Callable[[dict[str, Any]], bool] = field(
+        default=lambda _record: False, repr=False
+    )
+    pairing_supported: bool = True
+    pairing_skip_reason: str | None = None
+
+    # -- corpus-level plan-anchor --
+    call_names: Callable[[dict[str, Any]], list[str]] = field(
+        default=lambda _record: [], repr=False
+    )
+    anchor_tool_names: frozenset[str] = frozenset()
+    plan_anchor_supported: bool = True
+    plan_anchor_skip_reason: str | None = None
 
 
 @dataclass
@@ -192,35 +287,95 @@ def _tool_result_ref_id(block: dict[str, Any]) -> str | None:
     return str(value) if value else None
 
 
-def _session_anchor_tool_names(events: list[dict[str, Any]]) -> set[str]:
-    """Which known plan-anchor tool names this session actually calls."""
+def _cc_record_type(event: dict[str, Any]) -> str | None:
+    """`CLAUDE_CODE_HEALTH_DECLARATION.record_type`: a raw JSONL event's own
+    `type` field -- exactly what the unknown-record-type-share check read
+    before P1b (`event.get("type")`)."""
+    value = event.get("type") if isinstance(event, dict) else None
+    return str(value) if value is not None else None
+
+
+def _cc_call_ids(event: dict[str, Any]) -> list[str | None]:
+    """`CLAUDE_CODE_HEALTH_DECLARATION.call_ids`: the `id` of every
+    `tool_use` block in one `assistant` event."""
+    return [_tool_use_id(b) for b in _tool_use_blocks(event)]
+
+
+def _cc_result_ref_ids(event: dict[str, Any]) -> list[str | None]:
+    """`CLAUDE_CODE_HEALTH_DECLARATION.result_ref_ids`: the `tool_use_id`
+    each `tool_result` block in one `user` event claims to resolve."""
+    return [_tool_result_ref_id(b) for b in _tool_result_blocks(event)]
+
+
+def _cc_pairing_boundary(event: dict[str, Any]) -> bool:
+    """`CLAUDE_CODE_HEALTH_DECLARATION.pairing_boundary`: any `user` event
+    ends the trailing-in-flight run for `_trailing_in_flight_call_count`'s
+    id-less fallback, whether or not that event itself carries a
+    `tool_result` (plain user text is still a hard boundary) -- exactly
+    the `event.get("type") == "user"` check the fallback used before P1b.
+    """
+    return event.get("type") == "user"
+
+
+def _cc_call_names(event: dict[str, Any]) -> list[str]:
+    """`CLAUDE_CODE_HEALTH_DECLARATION.call_names`: the `name` of every
+    `tool_use` block in one `assistant` event -- what the plan-anchor
+    check matches against `PLAN_ANCHOR_TOOL_NAMES`."""
+    return [str(b["name"]) for b in _tool_use_blocks(event) if b.get("name")]
+
+
+CLAUDE_CODE_HEALTH_DECLARATION = HealthDeclaration(
+    name="claude-code",
+    record_type=_cc_record_type,
+    known_record_types=KNOWN_RECORD_TYPES,
+    call_ids=_cc_call_ids,
+    result_ref_ids=_cc_result_ref_ids,
+    pairing_boundary=_cc_pairing_boundary,
+    call_names=_cc_call_names,
+    anchor_tool_names=frozenset(PLAN_ANCHOR_TOOL_NAMES),
+)
+
+
+def _session_anchor_tool_names(
+    events: list[dict[str, Any]], declaration: HealthDeclaration
+) -> set[str]:
+    """Which of `declaration.anchor_tool_names` this session actually
+    calls, per `declaration.call_names`. Always `set()` when
+    `declaration.plan_anchor_supported` is False (or `anchor_tool_names`
+    is empty) -- a format with no plan-anchor concept simply never
+    contributes to the corpus-level dead-anchor invariant."""
+    if not declaration.plan_anchor_supported or not declaration.anchor_tool_names:
+        return set()
     found: set[str] = set()
     for event in events:
-        for block in _tool_use_blocks(event):
-            name = block.get("name")
-            if name in PLAN_ANCHOR_TOOL_NAMES:
-                found.add(str(name))
+        for name in declaration.call_names(event):
+            if name in declaration.anchor_tool_names:
+                found.add(name)
     return found
 
 
-def _session_tool_call_result_counts(events: list[dict[str, Any]]) -> tuple[int, int]:
-    calls = sum(len(_tool_use_blocks(event)) for event in events)
-    results = sum(len(_tool_result_blocks(event)) for event in events)
+def _session_tool_call_result_counts(
+    events: list[dict[str, Any]], declaration: HealthDeclaration
+) -> tuple[int, int]:
+    calls = sum(len(declaration.call_ids(event)) for event in events)
+    results = sum(len(declaration.result_ref_ids(event)) for event in events)
     return calls, results
 
 
 def _session_unknown_type_share(
-    events: list[dict[str, Any]], handled_record_types: frozenset[str]
+    events: list[dict[str, Any]],
+    handled_record_types: frozenset[str],
+    record_type: Callable[[dict[str, Any]], str | None],
 ) -> tuple[float, int, int]:
-    """(share, unknown_count, total_count) of records whose `type` is
-    outside `handled_record_types`. (0.0, 0, 0) for an empty session."""
+    """(share, unknown_count, total_count) of records whose `record_type(...)`
+    is outside `handled_record_types`. (0.0, 0, 0) for an empty session."""
     total = len(events)
     if total == 0:
         return 0.0, 0, 0
     unknown = sum(
         1
         for event in events
-        if isinstance(event, dict) and event.get("type") not in handled_record_types
+        if isinstance(event, dict) and record_type(event) not in handled_record_types
     )
     return unknown / total, unknown, total
 
@@ -229,44 +384,48 @@ def _session_label(index: int, session: SessionHealthInput) -> str:
     return session.session_id if session.session_id is not None else f"session[{index}]"
 
 
-def _trailing_in_flight_call_count(events: list[dict[str, Any]]) -> int:
-    """Tool_use calls in the trailing run of `assistant` events for which no
-    `user` event appears afterward anywhere in this session.
+def _trailing_in_flight_call_count(
+    events: list[dict[str, Any]], declaration: HealthDeclaration
+) -> int:
+    """Calls in the trailing run of records for which no
+    `declaration.pairing_boundary` record appears afterward anywhere in
+    this session.
 
     A transcript capture legitimately ends mid-call: the harness is killed,
     the user closes the session, or the capture is simply truncated, all
-    before the last tool_result is ever written. That is normal and is not
+    before the last result is ever written. That is normal and is not
     the "adapter dropped a result" signal this check exists to catch --
     real corpus fixtures show exactly this shape (see the GREEN-phase
     report for the concrete example this was discovered against). Only a
-    tool_use call that some LATER event skipped past without ever
-    delivering its result -- i.e. one that is NOT part of this trailing,
-    still-in-flight run -- counts as a genuine pairing breach below.
+    call that some LATER record skipped past without ever delivering its
+    result -- i.e. one that is NOT part of this trailing, still-in-flight
+    run -- counts as a genuine pairing breach below.
 
     ID-LESS FALLBACK ONLY as of the id-matched pairing fix: this coarse,
     type/count-only heuristic can't tell "two trailing parallel calls, one
     resolved" apart from "an orphaned call followed by an unrelated,
     separately-resolved one" -- both reduce to the same
-    `[assistant(call), assistant(call), user(N results)]` shape (see
-    `_unresolved_call_count_by_id`'s docstring for the concrete case this
-    caused). `_check_session` only reaches for this function when
-    `_unresolved_call_count_by_id` returns None, i.e. the session's
-    tool_use/tool_result blocks don't reliably carry ids to match by.
+    `[call, call, N results]` shape (see `_unresolved_call_count_by_id`'s
+    docstring for the concrete case this caused). `_check_session` only
+    reaches for this function when `_unresolved_call_count_by_id` returns
+    None, i.e. the session's calls/results don't reliably carry ids to
+    match by.
     """
     trailing = 0
     for event in reversed(events):
-        if event.get("type") == "user":
+        if declaration.pairing_boundary(event):
             break
-        if event.get("type") == "assistant":
-            trailing += len(_tool_use_blocks(event))
+        trailing += len(declaration.call_ids(event))
     return trailing
 
 
-def _unresolved_call_count_by_id(events: list[dict[str, Any]]) -> int | None:
-    """Genuine (non-trailing) unresolved tool_use call count, pairing each
-    call to its result by id -- or None if this session can't be reliably
-    id-matched (any tool_use or tool_result block is missing its id), which
-    tells `_check_session` to fall back to `_trailing_in_flight_call_count`'s
+def _unresolved_call_count_by_id(
+    events: list[dict[str, Any]], declaration: HealthDeclaration
+) -> int | None:
+    """Genuine (non-trailing) unresolved call count, pairing each call to
+    its result by id -- or None if this session can't be reliably
+    id-matched (any call or result is missing its id), which tells
+    `_check_session` to fall back to `_trailing_in_flight_call_count`'s
     coarser, count-only heuristic instead.
 
     This is the fix for a real doctor false breach: a live session's tail
@@ -274,32 +433,32 @@ def _unresolved_call_count_by_id(events: list[dict[str, Any]]) -> int | None:
     user(tool_result for the WebSearch call)` -- two trailing parallel
     calls, one resolved, capture truncated before the second's result
     arrived. `_trailing_in_flight_call_count` walks in reverse and stops at
-    the FIRST `user` event, so it excused nothing here (that event wasn't
-    an unbroken run of `assistant` events) and the still-open WebFetch call
-    false-breached. But nothing in `_trailing_in_flight_call_count`'s
-    type/count-only view can tell that shape apart from a genuinely
-    orphaned call followed by an unrelated, separately-resolved one --
-    both are `[assistant(call), assistant(call), user(1 result)]`. Real
-    transcripts carry enough to resolve the ambiguity: `tool_use` blocks
-    have `id`, `tool_result` blocks have `tool_use_id` naming which call
-    they resolve (confirmed against a live Claude Code session's raw
-    JSONL). Once results are matched to calls by id rather than by
-    position/count, "trailing in-flight" gets an exact definition: a call
-    is excused iff it is unresolved AND no call issued at-or-after it ever
-    gets a tool_result anywhere in the transcript -- i.e. the maximal
-    SUFFIX of the issuance-ordered call list that is entirely unresolved.
-    Any unresolved call before that suffix has a LATER call that DID get
-    resolved, meaning the capture plainly kept going after it -- a genuine,
-    mid-transcript pairing breach, not truncation.
+    the FIRST boundary record, so it excused nothing here (that record
+    wasn't preceded by an unbroken run of call-issuing records) and the
+    still-open WebFetch call false-breached. But nothing in
+    `_trailing_in_flight_call_count`'s type/count-only view can tell that
+    shape apart from a genuinely orphaned call followed by an unrelated,
+    separately-resolved one -- both are `[call, call, 1 result]`. Real
+    transcripts carry enough to resolve the ambiguity: calls carry an id,
+    results carry the id of the call they resolve (confirmed against a
+    live Claude Code session's raw JSONL). Once results are matched to
+    calls by id rather than by position/count, "trailing in-flight" gets
+    an exact definition: a call is excused iff it is unresolved AND no
+    call issued at-or-after it ever gets a result anywhere in the
+    transcript -- i.e. the maximal SUFFIX of the issuance-ordered call
+    list that is entirely unresolved. Any unresolved call before that
+    suffix has a LATER call that DID get resolved, meaning the capture
+    plainly kept going after it -- a genuine, mid-transcript pairing
+    breach, not truncation.
     """
     call_ids: list[str | None] = [
-        _tool_use_id(block) for event in events for block in _tool_use_blocks(event)
+        call_id for event in events for call_id in declaration.call_ids(event)
     ]
     if not call_ids or any(call_id is None for call_id in call_ids):
         return None
 
     result_ref_ids: list[str | None] = [
-        _tool_result_ref_id(block) for event in events for block in _tool_result_blocks(event)
+        ref_id for event in events for ref_id in declaration.result_ref_ids(event)
     ]
     if any(ref_id is None for ref_id in result_ref_ids):
         return None
@@ -322,6 +481,7 @@ def _check_subagent(
     *,
     max_unhandled_type_share: float,
     handled_record_types: frozenset[str],
+    record_type: Callable[[dict[str, Any]], str | None],
 ) -> list[str]:
     """Breach(es) for one subagent transcript candidate.
 
@@ -331,7 +491,11 @@ def _check_subagent(
     to also run a content check against, and reporting both would just be
     noise on top of the one real signal. Only when the layout itself is
     clean does the SAME unknown-record-type-share check already used for
-    parent transcripts run against this subagent's own events.
+    parent transcripts run against this subagent's own events. Subagent
+    transcripts are always Claude Code's own delegate-transcript shape
+    (`SubagentHealthInput` is only ever populated by the claude-code
+    adapter path), so this reuses whichever `record_type`/
+    `handled_record_types` the top-level call is already using.
     """
     if not subagent.has_meta:
         return [
@@ -344,7 +508,9 @@ def _check_subagent(
             "toolUseId (broken subagents/ layout -- cannot join it to its parent Task step)"
         ]
 
-    share, unknown, total = _session_unknown_type_share(subagent.events, handled_record_types)
+    share, unknown, total = _session_unknown_type_share(
+        subagent.events, handled_record_types, record_type
+    )
     if total > 0 and share > max_unhandled_type_share:
         return [
             f"{label}: subagent {subagent.agent_id} unhandled/unknown record type share "
@@ -359,40 +525,52 @@ def _check_session(
     session: SessionHealthInput,
     *,
     max_unhandled_type_share: float,
-    handled_record_types: frozenset[str],
+    declaration: HealthDeclaration,
+    handled_record_types: frozenset[str] | None,
 ) -> list[str]:
     """The cheap, corpus-size-independent per-session structural checks:
     (a) tool-call/tool-result pairing, (b) unknown-record-type share, both
     over the parent transcript's own events, and (c) the same checks
     (layout + unknown-type-share) over each of this session's subagent
-    transcripts, if any."""
+    transcripts, if any. (a) and (b) are each skipped entirely -- no
+    breach, ever -- when `declaration.pairing_supported` /
+    `declaration.unknown_type_share_supported` is False: that format has
+    no equivalent concept, a documented skip rather than a fake pass (see
+    `HealthDeclaration`)."""
     label = _session_label(index, session)
     breaches: list[str] = []
+    effective_known_types = (
+        handled_record_types if handled_record_types is not None else declaration.known_record_types
+    )
 
-    calls, results = _session_tool_call_result_counts(session.events)
-    if calls != results:
-        unresolved = _unresolved_call_count_by_id(session.events)
-        if unresolved is None:
-            # Id-less fallback (see _unresolved_call_count_by_id's
-            # docstring): can't pair by id, so fall back to the coarser
-            # type/count-only trailing heuristic.
-            trailing = _trailing_in_flight_call_count(session.events)
-            unresolved = (calls - results) - trailing
-        else:
-            trailing = (calls - results) - unresolved
-        if unresolved > 0:
-            breaches.append(
-                f"{label}: tool-call/tool-result mismatch: {calls} tool-call(s) vs "
-                f"{results} tool-result(s) ({unresolved} unresolved beyond the "
-                f"{trailing} still-in-flight trailing call(s))"
-            )
+    if declaration.pairing_supported:
+        calls, results = _session_tool_call_result_counts(session.events, declaration)
+        if calls != results:
+            unresolved = _unresolved_call_count_by_id(session.events, declaration)
+            if unresolved is None:
+                # Id-less fallback (see _unresolved_call_count_by_id's
+                # docstring): can't pair by id, so fall back to the coarser
+                # type/count-only trailing heuristic.
+                trailing = _trailing_in_flight_call_count(session.events, declaration)
+                unresolved = (calls - results) - trailing
+            else:
+                trailing = (calls - results) - unresolved
+            if unresolved > 0:
+                breaches.append(
+                    f"{label}: tool-call/tool-result mismatch: {calls} tool-call(s) vs "
+                    f"{results} tool-result(s) ({unresolved} unresolved beyond the "
+                    f"{trailing} still-in-flight trailing call(s))"
+                )
 
-    share, unknown, total = _session_unknown_type_share(session.events, handled_record_types)
-    if total > 0 and share > max_unhandled_type_share:
-        breaches.append(
-            f"{label}: unhandled/unknown record type share {share:.1%} "
-            f"({unknown}/{total} records) exceeds the {max_unhandled_type_share:.0%} threshold"
+    if declaration.unknown_type_share_supported:
+        share, unknown, total = _session_unknown_type_share(
+            session.events, effective_known_types, declaration.record_type
         )
+        if total > 0 and share > max_unhandled_type_share:
+            breaches.append(
+                f"{label}: unhandled/unknown record type share {share:.1%} "
+                f"({unknown}/{total} records) exceeds the {max_unhandled_type_share:.0%} threshold"
+            )
 
     for subagent in session.subagents:
         breaches.extend(
@@ -400,18 +578,21 @@ def _check_session(
                 label,
                 subagent,
                 max_unhandled_type_share=max_unhandled_type_share,
-                handled_record_types=handled_record_types,
+                handled_record_types=effective_known_types,
+                record_type=declaration.record_type,
             )
         )
 
     return breaches
 
 
-def _corpus_has_any_anchor(sessions: list[SessionHealthInput]) -> bool:
+def _corpus_has_any_anchor(
+    sessions: list[SessionHealthInput], declaration: HealthDeclaration
+) -> bool:
     """Whether ANY session in the corpus shows ANY known plan anchor --
-    a persisted plan store, or a TodoWrite/TaskCreate/TaskUpdate call."""
+    a persisted plan store, or one of `declaration.anchor_tool_names`."""
     for session in sessions:
-        if session.has_plan_store or _session_anchor_tool_names(session.events):
+        if session.has_plan_store or _session_anchor_tool_names(session.events, declaration):
             return True
     return False
 
@@ -421,7 +602,8 @@ def check_adapter_health(
     *,
     min_corpus_size: int = DEFAULT_MIN_CORPUS_SIZE,
     max_unhandled_type_share: float = DEFAULT_MAX_UNHANDLED_TYPE_SHARE,
-    handled_record_types: frozenset[str] = KNOWN_RECORD_TYPES,
+    handled_record_types: frozenset[str] | None = None,
+    declaration: HealthDeclaration = CLAUDE_CODE_HEALTH_DECLARATION,
 ) -> AdapterHealth:
     """Evaluate the adapter-health canary over `sessions`.
 
@@ -429,6 +611,15 @@ def check_adapter_health(
     still errors on malformed input is caught and turned into its own
     breach message rather than propagating, so a caller always gets an
     `AdapterHealth` back, never an exception.
+
+    `declaration` (P1b gap 2) says how to read `sessions[*].events`'
+    native record shape; it defaults to `CLAUDE_CODE_HEALTH_DECLARATION`,
+    which reproduces this function's pre-P1b behaviour exactly, so every
+    call site that doesn't pass one is unaffected. `handled_record_types`,
+    when given, still overrides `declaration.known_record_types` for the
+    unknown-record-type-share check specifically (unchanged from before
+    P1b) -- `None` (the new default) means "use the declaration's own
+    set".
 
     The corpus-level dead-anchor invariant (D1) only runs once
     ``len(sessions) >= min_corpus_size``; the per-session checks always
@@ -444,6 +635,7 @@ def check_adapter_health(
                     index,
                     session,
                     max_unhandled_type_share=max_unhandled_type_share,
+                    declaration=declaration,
                     handled_record_types=handled_record_types,
                 )
             )
@@ -453,7 +645,7 @@ def check_adapter_health(
                 f"session ({type(exc).__name__}: {exc})"
             )
 
-    if len(sessions) >= min_corpus_size and not _corpus_has_any_anchor(sessions):
+    if len(sessions) >= min_corpus_size and not _corpus_has_any_anchor(sessions, declaration):
         breaches.append(
             "corpus-level: 0 known plan anchor (TodoWrite/TaskCreate/TaskUpdate/persisted "
             f"plan store) occurrences across {len(sessions)} sessions (need >= {min_corpus_size})"

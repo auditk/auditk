@@ -136,3 +136,10 @@ class TestLangGraphTraceAdapter:
         adapter = LangGraphTraceAdapter()
         with pytest.raises(ValueError, match="empty"):
             adapter.ingest([])
+
+    def test_malformed_checkpoint_missing_config_raises_value_error(self) -> None:
+        """A checkpoint dict missing `config` must refuse via a documented
+        ValueError, not leak a raw KeyError from `_get_thread_id`."""
+        adapter = LangGraphTraceAdapter()
+        with pytest.raises(ValueError, match="malformed"):
+            adapter.ingest([{"checkpoint": {"id": "c1"}, "metadata": {}}])

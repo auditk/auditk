@@ -1,0 +1,27 @@
+[
+  {
+    "id": 101,
+    "session_id": "hs-min-0001",
+    "role": "user",
+    "content": "list the sandbox directory",
+    "timestamp": 1793000000.0
+  },
+  {
+    "id": 102,
+    "session_id": "hs-min-0001",
+    "role": "assistant",
+    "content": null,
+    "tool_calls": "[{\"id\": \"call-1\", \"call_id\": \"call-1\", \"type\": \"function\", \"function\": {\"name\": \"terminal\", \"arguments\": \"{\\\"command\\\": \\\"ls sandbox/\\\"}\"}}]",
+    "finish_reason": "tool_calls",
+    "timestamp": 1793000001.0
+  },
+  {
+    "id": 103,
+    "session_id": "hs-min-0001",
+    "role": "tool",
+    "tool_call_id": "call-1",
+    "tool_name": "terminal",
+    "content": "file1\nfile2",
+    "timestamp": 1793000002.0
+  }
+]

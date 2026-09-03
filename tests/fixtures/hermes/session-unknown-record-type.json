@@ -1,0 +1,37 @@
+[
+  {
+    "id": 301,
+    "session_id": "hs-unk-0001",
+    "role": "user",
+    "content": "hello",
+    "timestamp": 1793000300.0
+  },
+  {
+    "id": 302,
+    "session_id": "hs-unk-0001",
+    "role": "billing_event",
+    "content": "session cost recalculated",
+    "timestamp": 1793000301.0
+  },
+  {
+    "id": 303,
+    "session_id": "hs-unk-0001",
+    "role": "billing_event",
+    "content": "session cost recalculated again",
+    "timestamp": 1793000302.0
+  },
+  {
+    "id": 304,
+    "session_id": "hs-unk-0001",
+    "role": "billing_event",
+    "content": "session cost recalculated a third time",
+    "timestamp": 1793000303.0
+  },
+  {
+    "id": 305,
+    "session_id": "hs-unk-0001",
+    "role": "billing_event",
+    "content": "session cost recalculated a fourth time",
+    "timestamp": 1793000304.0
+  }
+]
