@@ -80,7 +80,7 @@ class TestReportPiStub:
         assert PI_GATED_MESSAGE in result.output
         assert "Traceback" not in result.output
 
-    # `report --strip-payloads` itself doesn't exist yet at this point in
-    # the branch history (see the `fix(cli): support --strip-payloads on
-    # report` commit) -- its own pi-stub coverage is added alongside that
-    # commit in tests/unit/test_cli_strip_payloads_generic.py, not here.
+    # `report --strip-payloads`'s own pi-stub coverage lives in
+    # tests/unit/test_cli_strip_payloads_generic.py::TestReportPiStubStripPayloads
+    # (added alongside the `fix(cli): support --strip-payloads on report`
+    # commit that introduced the flag), not here.
