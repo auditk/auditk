@@ -68,6 +68,31 @@ def _user_tool_results(n: int) -> dict[str, Any]:
     return {"type": "user", "message": {"content": content}}
 
 
+def _assistant_tool_use_with_ids(*tool_calls: tuple[str, str, dict[str, Any]]) -> dict[str, Any]:
+    """Like `_assistant_tool_use`, but each call also carries its `id` --
+    the real-transcript shape (confirmed against a live Claude Code
+    session's raw JSONL: `tool_use` blocks carry `id`, `tool_result` blocks
+    carry `tool_use_id`) needed to exercise the id-matched pairing path in
+    `health.py` (`_tool_use_id`/`_unresolved_call_count_by_id`), rather than
+    the id-less fallback that `_assistant_tool_use` above still exercises."""
+    content = [
+        {"type": "tool_use", "id": call_id, "name": name, "input": inp}
+        for call_id, name, inp in tool_calls
+    ]
+    return {"type": "assistant", "message": {"content": content}}
+
+
+def _user_tool_result_for(*tool_use_ids: str) -> dict[str, Any]:
+    """A `user` event whose `tool_result` blocks each resolve exactly one
+    of `tool_use_ids`, by id -- the real-transcript shape `_tool_result_ref_id`
+    reads. Pairs with `_assistant_tool_use_with_ids` above."""
+    content: list[dict[str, Any]] = [
+        {"type": "tool_result", "tool_use_id": tool_use_id, "content": "ok"}
+        for tool_use_id in tool_use_ids
+    ]
+    return {"type": "user", "message": {"content": content}}
+
+
 def _user_text(text: str = "please do the thing") -> dict[str, Any]:
     return {"type": "user", "message": {"content": text}}
 
@@ -294,16 +319,104 @@ class TestPerSessionToolCallResultPairing:
         # orphaned call (see test_single_trailing_in_flight_call_does_not_breach
         # just below for why a merely-trailing unresolved call must NOT
         # qualify here).
+        #
+        # Test Integrity Rule note (re-pinned 2026-09-03, approved by Matt):
+        # this fixture used to leave WHICH call the lone tool_result resolved
+        # unstated -- id-less blocks, so "Read orphaned, Bash resolved" was
+        # merely the intended reading, not something the check could actually
+        # tell apart from "Bash orphaned, Read resolved" (both reduce to the
+        # same type/count shape). That ambiguity is exactly what let a real
+        # live-corpus session (two trailing parallel calls, one resolved by
+        # id, capture truncated before the other's result arrived) false-
+        # breach: the fix widening `_trailing_in_flight_call_count` for that
+        # id-less shape necessarily also excused *this* fixture, since they
+        # were indistinguishable. Now that pairing is id-matched when ids are
+        # present (`_unresolved_call_count_by_id`), the ambiguity is gone --
+        # this fixture is re-pinned to the variant that keeps its original
+        # intent (a genuine mid-transcript orphan, Test Integrity Rule
+        # justification: "test assumed call/result pairing was unknowable
+        # from types alone; id-matching makes the ambiguous fixture decidable
+        # -- re-pinned to the still-breaching variant per Test Integrity
+        # Rule, approved by Matt 2026-09-03").
         events = [
-            _assistant_tool_use(("Read", {"file_path": "/a"})),
-            # The Read's result never arrives -- but the session carries on
-            # with a full, separately-resolved round trip afterward, so
-            # this is not "the capture just ended mid-call": something else
-            # happened while the Read's result was silently dropped.
-            _assistant_tool_use(("Bash", {"command": "echo hi"})),
-            _user_tool_results(1),
+            _assistant_tool_use_with_ids(("call-read", "Read", {"file_path": "/a"})),
+            # The Read's result never arrives -- the single tool_result that
+            # follows is pinned, by id, to the LATER Bash call instead. So
+            # the session carries on with a full, separately-resolved round
+            # trip afterward: this is not "the capture just ended mid-call",
+            # something else happened while the Read's result was dropped.
+            _assistant_tool_use_with_ids(("call-bash", "Bash", {"command": "echo hi"})),
+            _user_tool_result_for("call-bash"),
         ]
         result = check_adapter_health([SessionHealthInput(events=events)])
+        assert result.ok is False
+
+    def test_trailing_parallel_calls_excused_when_id_matched_result_resolves_the_other(
+        self,
+    ) -> None:
+        # RED-phase reproduction of the live-corpus false breach: two
+        # trailing parallel tool_use calls (WebSearch, WebFetch shape from
+        # the real session), capture truncated after only the FIRST call's
+        # result comes back. Id-less, this was indistinguishable from the
+        # genuine-orphan fixture above and false-breached (8 tool-call(s) vs
+        # 7 tool-result(s), 1 unresolved, 0 excused as trailing, because the
+        # naive reverse walk in `_trailing_in_flight_call_count` stopped at
+        # the first `user` event it saw, whether or not that event's results
+        # actually covered the trailing calls). With ids present, the
+        # second/later call (WebFetch-equivalent) is the one still open, and
+        # nothing issued after it ever resolves -- exactly "trailing
+        # in-flight": excused, not a breach.
+        events = [
+            _assistant_tool_use_with_ids(("call-search", "WebSearch", {"query": "x"})),
+            _assistant_tool_use_with_ids(("call-fetch", "WebFetch", {"url": "y"})),
+            _user_tool_result_for("call-search"),
+        ]
+        result = check_adapter_health(
+            [SessionHealthInput(events=events, session_id="trailing-parallel")]
+        )
+        assert result.ok is True
+        assert result.breaches == []
+
+    def test_id_matched_orphan_breaches_even_when_a_later_call_resolves(self) -> None:
+        # Guard: same two-call/one-result shape as the excused case just
+        # above, but the result is pinned to the SECOND (later-issued) call
+        # instead of the first. The first call is then a genuine
+        # mid-transcript orphan -- something issued after it DID get a
+        # result, so it cannot be "the capture ended while everything from
+        # here on was still open". Must still breach.
+        events = [
+            _assistant_tool_use_with_ids(("call-a", "Read", {"file_path": "/a"})),
+            _assistant_tool_use_with_ids(("call-b", "Bash", {"command": "echo hi"})),
+            _user_tool_result_for("call-b"),
+        ]
+        result = check_adapter_health([SessionHealthInput(events=events, session_id="orphan-a")])
+        assert result.ok is False
+
+    def test_mixed_id_presence_falls_back_to_count_based_pairing_and_still_breaches(
+        self,
+    ) -> None:
+        # Defensive fallback coverage: if even ONE tool_use block in a
+        # session is missing its id (malformed/foreign input, not a real
+        # Claude Code transcript -- real transcripts carry `id` on every
+        # tool_use block), id-matching cannot be trusted for ANY call in
+        # that session -- `_unresolved_call_count_by_id` returns None
+        # (short-circuits on the first missing id) and the check falls back
+        # to the original, coarser `_trailing_in_flight_call_count`
+        # heuristic. This must never make the check WEAKER than before this
+        # change: same shape as `test_breach_when_tool_calls_outnumber_tool_results`
+        # (two calls, one id-less result, no trailing excuse available under
+        # the old heuristic because the transcript doesn't end on a run of
+        # `assistant` events) -- one call now happens to carry an id, but
+        # that must not enable a partial/best-effort id-match; it still
+        # breaches exactly as the fully id-less version does.
+        events = [
+            _assistant_tool_use_with_ids(("call-1", "Bash", {"command": "one"})),
+            _assistant_tool_use(("Bash", {"command": "two"})),  # no id
+            _user_tool_results(1),  # no tool_use_id either
+        ]
+        result = check_adapter_health(
+            [SessionHealthInput(events=events, session_id="id-less-mixed")]
+        )
         assert result.ok is False
 
     def test_single_trailing_in_flight_call_does_not_breach(self) -> None:
