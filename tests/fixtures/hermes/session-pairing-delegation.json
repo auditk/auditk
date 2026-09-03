@@ -1,0 +1,45 @@
+[
+  {
+    "id": 201,
+    "session_id": "hs-pair-0001",
+    "role": "user",
+    "content": "check the build and then hand off a research task",
+    "timestamp": 1793000200.0
+  },
+  {
+    "id": 202,
+    "session_id": "hs-pair-0001",
+    "role": "assistant",
+    "content": "Checking the build first.",
+    "tool_calls": "[{\"id\": \"call-build\", \"call_id\": \"call-build\", \"type\": \"function\", \"function\": {\"name\": \"terminal\", \"arguments\": \"{\\\"command\\\": \\\"make build\\\"}\"}}]",
+    "finish_reason": "tool_calls",
+    "timestamp": 1793000201.0
+  },
+  {
+    "id": 203,
+    "session_id": "hs-pair-0001",
+    "role": "tool",
+    "tool_call_id": "call-build",
+    "tool_name": "terminal",
+    "content": "{\"output\": \"BUILD OK\", \"exit_code\": 0}",
+    "timestamp": 1793000202.0
+  },
+  {
+    "id": 204,
+    "session_id": "hs-pair-0001",
+    "role": "assistant",
+    "content": "Build passed. Now delegating the research task to a subagent.",
+    "tool_calls": "[{\"id\": \"call-delegate\", \"call_id\": \"call-delegate\", \"type\": \"function\", \"function\": {\"name\": \"delegate_task\", \"arguments\": \"{\\\"goal\\\": \\\"survey upstream release notes\\\", \\\"role\\\": \\\"leaf\\\"}\"}}]",
+    "finish_reason": "tool_calls",
+    "timestamp": 1793000203.0
+  },
+  {
+    "id": 205,
+    "session_id": "hs-pair-0001",
+    "role": "tool",
+    "tool_call_id": "call-delegate",
+    "tool_name": "delegate_task",
+    "content": "{\"results\": [{\"task_index\": 0, \"status\": \"completed\", \"summary\": \"Surveyed release notes; nothing breaking.\", \"api_calls\": 3, \"duration_seconds\": 8.4, \"model\": \"some/delegate-model\", \"exit_reason\": \"completed\"}], \"total_duration_seconds\": 8.4}",
+    "timestamp": 1793000210.0
+  }
+]

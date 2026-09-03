@@ -1,0 +1,12 @@
+[
+  {
+    "session_id": "hs-mal-0001"
+  },
+  {
+    "session_id": "hs-mal-0001",
+    "role": "assistant",
+    "content": 12345,
+    "tool_calls": "not-valid-json-at-all",
+    "timestamp": 1793000100.0
+  }
+]

@@ -13,11 +13,13 @@ one the same way against its own package).
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from auditk.adapters.claude_code import ClaudeCodeTraceAdapter
 from auditk.adapters.generic_otel import GENERIC_OTEL_HEALTH_DECLARATION, OtelTraceAdapter
 from auditk.adapters.health import CLAUDE_CODE_HEALTH_DECLARATION
+from auditk.adapters.hermes import HERMES_HEALTH_DECLARATION, HermesTraceAdapter
 from auditk.adapters.langgraph import LANGGRAPH_HEALTH_DECLARATION, LangGraphTraceAdapter
 from auditk.schema import ActionType, Trace
 from tests.conformance.kit import AdapterConformanceFixtures, HealthFixture, RedactionFixture
@@ -307,4 +309,150 @@ _GENERIC_OTEL = AdapterConformanceFixtures(
 )
 
 
-PROVIDERS: list[AdapterConformanceFixtures] = [_CLAUDE_CODE, _LANGGRAPH, _GENERIC_OTEL]
+# --- hermes --------------------------------------------------------------
+# Native format: a list of Hermes `messages`-table row dicts, ordered by
+# timestamp (see src/auditk/adapters/hermes.py's module docstring for the
+# real column shapes -- role/content/tool_call_id/tool_calls/tool_name --
+# this mirrors, confirmed against a live corpus and the hermes-agent writer
+# source, not guessed).
+
+
+def _hermes_row(role: str, **kwargs: Any) -> dict[str, Any]:
+    row: dict[str, Any] = {"session_id": "hermes-conformance-1", "role": role, "timestamp": 0.0}
+    row.update(kwargs)
+    return row
+
+
+def _hermes_tool_calls_json(call_id: str, name: str, arguments: dict[str, Any]) -> str:
+    """The real on-disk shape of an `assistant` row's `tool_calls` column:
+    a JSON-encoded string wrapping a list of OpenAI-style function-call
+    dicts, whose own `function.arguments` is itself a JSON-encoded string."""
+    return json.dumps(
+        [
+            {
+                "id": call_id,
+                "call_id": call_id,
+                "type": "function",
+                "function": {"name": name, "arguments": json.dumps(arguments)},
+            }
+        ]
+    )
+
+
+def _hermes_redaction_fixture() -> RedactionFixture:
+    native = [
+        _hermes_row("user", id=1, content="please list the sandbox directory"),
+        _hermes_row(
+            "assistant",
+            id=2,
+            tool_calls=_hermes_tool_calls_json("call-ls", "terminal", {"command": "ls sandbox/"}),
+        ),
+        _hermes_row(
+            "tool", id=3, tool_call_id="call-ls", tool_name="terminal", content="file1\nfile2"
+        ),
+    ]
+
+    def _assert_redacted(trace: Trace) -> None:
+        tool_call = next(s for s in trace.steps if s.action.type == ActionType.TOOL_CALL)
+        assert tool_call.action.payload["input"] == {
+            "redacted": True,
+            "size": len(str({"command": "ls sandbox/"})),
+        }
+        tool_result = next(s for s in trace.steps if s.action.type == ActionType.ENV_EFFECT)
+        assert tool_result.action.payload["tool_result"] == {
+            "redacted": True,
+            "size": len("file1\nfile2"),
+        }
+
+    return RedactionFixture(
+        redacting_adapter=HermesTraceAdapter(strip_payloads=True),
+        native=native,
+        assert_redacted=_assert_redacted,
+    )
+
+
+def _hermes_health_fixture() -> HealthFixture:
+    id_matched_paired = [
+        _hermes_row("user", id=1),
+        _hermes_row(
+            "assistant",
+            id=2,
+            tool_calls=_hermes_tool_calls_json("call-read", "read_file", {"path": "/a"}),
+        ),
+        _hermes_row("tool", id=3, tool_call_id="call-read", tool_name="read_file", content="ok"),
+    ]
+    # Hermes' tool_calls entries always carry a real id when they exist at
+    # all -- there is no genuinely id-less native shape to model here the
+    # way Claude Code's fixture does. This instead models the real
+    # "capture ends mid-call" case directly: a call issued, no result row
+    # ever arrives, and nothing follows it either -- the id-matched
+    # trailing-in-flight excuse must still apply.
+    id_less_trailing = [
+        _hermes_row(
+            "assistant",
+            id=1,
+            tool_calls=_hermes_tool_calls_json("call-a", "read_file", {"path": "/a"}),
+        )
+    ]
+    # call-a's result never arrives, but call-b (issued after it) gets a
+    # full round trip -- a genuine mid-transcript orphan, not truncation.
+    id_matched_orphan = [
+        _hermes_row(
+            "assistant",
+            id=1,
+            tool_calls=_hermes_tool_calls_json("call-a", "read_file", {"path": "/a"}),
+        ),
+        _hermes_row(
+            "assistant",
+            id=2,
+            tool_calls=_hermes_tool_calls_json("call-b", "terminal", {"command": "echo hi"}),
+        ),
+        _hermes_row("tool", id=3, tool_call_id="call-b", tool_name="terminal", content="hi"),
+    ]
+    # 4 rows whose `role` Hermes has never emitted, 1 with a known role --
+    # 80% unknown, well over the 5% floor.
+    unknown_type_share = [_hermes_row("totally-new-conformance-role", id=i) for i in range(4)] + [
+        _hermes_row("user", id=5)
+    ]
+    return HealthFixture(
+        declaration=HERMES_HEALTH_DECLARATION,
+        id_matched_paired_events=id_matched_paired,
+        id_less_trailing_events=id_less_trailing,
+        id_matched_orphan_events=id_matched_orphan,
+        unknown_type_share_events=unknown_type_share,
+    )
+
+
+_HERMES = AdapterConformanceFixtures(
+    name="hermes",
+    adapter=HermesTraceAdapter(),
+    empty_native=[],
+    # Missing `role` entirely on the first row, unparseable `tool_calls`
+    # string and a non-str `content` on the second -- the Hermes adapter is
+    # defensive throughout (mirrors Claude Code's isinstance-checked
+    # style), so this is processed best-effort rather than refused -- see
+    # docs/adapters.md's "malformed-input" section.
+    malformed_native=[
+        {"session_id": "hermes-conformance-malformed"},
+        {
+            "session_id": "hermes-conformance-malformed",
+            "role": "assistant",
+            "tool_calls": "not-json-at-all",
+            "content": 123,
+        },
+    ],
+    minimal_valid_native=[
+        _hermes_row("user", id=1, content="list the sandbox directory"),
+        _hermes_row(
+            "assistant",
+            id=2,
+            tool_calls=_hermes_tool_calls_json("call-1", "terminal", {"command": "ls sandbox/"}),
+        ),
+        _hermes_row("tool", id=3, tool_call_id="call-1", tool_name="terminal", content="ok"),
+    ],
+    redaction=_hermes_redaction_fixture(),
+    health=_hermes_health_fixture(),
+)
+
+
+PROVIDERS: list[AdapterConformanceFixtures] = [_CLAUDE_CODE, _LANGGRAPH, _GENERIC_OTEL, _HERMES]
