@@ -126,7 +126,7 @@ def test_render_html_shows_finding_severities_and_rules() -> None:
     for severity in ("HIGH", "MEDIUM"):
         assert severity in html
     # Each finding's rule id appears so the HTML is as auditable as the md.
-    assert any(f.rule in html for f in model.findings.findings)
+    assert any(f.rule_id in html for f in model.findings.findings)
 
 
 # --- CLI dispatch ---------------------------------------------------------
