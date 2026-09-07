@@ -161,6 +161,7 @@ stream exposes it. No model calls, no API keys.
 | [`auditk-spec`](https://github.com/auditk/auditk-spec) | Language-agnostic protocol: trace, evidence-pack, probe, and agent-config schemas |
 | [`auditk-testbed`](https://github.com/auditk/auditk-testbed) | Reference agents (aligned + vulnerable) for probe and pipeline validation |
 | [`auditk-trail-comparison`](https://github.com/auditk/auditk-trail-comparison) | Reproducibility code and data for the TRAIL cross-taxonomy comparison (paper §4.3) |
+| [`bossyk-sandbox`](https://github.com/haikomatt/bossyk-sandbox) | Downstream consumer (separate project, BSL-1.1): a reference monitor for tool-using agents that builds its signed evidence packs on auditk's models, Ed25519 signer, and drift scorer, unmodified |
 
 ## Contributing
 
