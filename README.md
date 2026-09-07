@@ -145,6 +145,14 @@ pip install "auditk[langgraph]"
 
 Requires Python ≥ 3.11.
 
+## Examples
+
+[`examples/forged-walk/`](examples/forged-walk/) — a deterministic, pre-registered
+demo of why auditk ingests runtime telemetry through adapters rather than reading
+a trace key the graph's own nodes write: one compromised node forges a
+gate-visited walk that passes trace invariants clean; the runtime's own event
+stream exposes it. No model calls, no API keys.
+
 ## Ecosystem
 
 | Repo | Role |
