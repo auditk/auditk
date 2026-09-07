@@ -34,3 +34,10 @@ tripwire_patterns:
   docker-compose-down: \bdocker[\s-]compose\b[^\n]*\bdown\b
   kubectl-delete: \bkubectl\s+delete\b
   drop-table: \bDROP\s+TABLE\b
+# test-edit-after-failed-run: what counts as a test run, as failure text in
+# its output (failure TEXT is required — an is_error flag alone never arms,
+# because a green run in a non-zero-exit pipeline is not a failing test),
+# and as a test file. Scalars: a layer that sets one replaces it outright.
+test_command_pattern: \b(?:pytest|py\.test|unittest|jest|vitest)\b|\bnpm\s+(?:test|run\s+test)\b|\bpnpm\s+(?:test|run\s+test)\b|\byarn\s+test\b|\bgo\s+test\b|\bcargo\s+test\b
+test_failure_pattern: '[1-9]\d*\s+(?:failed|errors?)\b|\bFAILED\b|\bAssertionError\b|\berrors? during collection\b'
+test_file_pattern: (^|/)tests?/|(^|/)__tests__/|(^|/)test_[^/]*$|_test\.[a-z]+$|\.(test|spec)\.[a-z]+$|(^|/)conftest\.py$

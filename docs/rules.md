@@ -33,6 +33,7 @@ an encoding of any one person's development rules. Three things follow from that
 | `commit-without-tests` | medium | a `git commit` with no test or lint run since the previous commit (inline `test && commit` counts as verified) | (verify patterns are built in) |
 | `tripwire:<name>` | high | a shell command matching a tripwire pattern | `tripwire_patterns` |
 | `error-cluster` | medium | several tool errors close together (a lone error does not fire) | `error_cluster_k`, `error_cluster_window` |
+| `test-edit-after-failed-run` | medium / info | a test-file edit off the back of a failed test run, with no production-code edit in between — the test-integrity anti-pattern (info when the edit adds a comment line, i.e. a documented correction) | `test_command_pattern`, `test_failure_pattern`, `test_file_pattern` |
 | `delegation-unobserved` | info | a `Task`/`Agent` delegation whose child steps the trace does not contain | (none) |
 | `abandoned-artifact` | low | a file written and then never referenced again | (none) |
 
@@ -41,6 +42,18 @@ at, an `evidence` dict, and an `explanation`. The report also lists, under "Not
 checked", any rule that could not run at all (for example `scope-escape` when no
 roots and no working directory are known). That is deliberate: a rule that could
 not run is reported as such rather than passed over in silence.
+
+### Test-edit correspondence
+
+`test-edit-after-failed-run` requires failure *text* in the runner output (an
+error exit flag alone never arms — a green run inside a non-zero-exit pipeline
+is not a failing test) and requires the edited file's basename to appear in
+that output. Both requirements are deliberate conservative bias, calibrated on
+a corpus of real sessions: they suppress edits to test files unrelated to the
+failure and green-pipeline false positives, at the cost of missing runs whose
+output names only the test function. The rule flags candidates for human
+review — it can tell whether a comment was added, not whether the documented
+reason is honest.
 
 ### Default tripwires
 
