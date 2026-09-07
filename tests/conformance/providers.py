@@ -1,6 +1,6 @@
 # Copyright 2026 Matt Dawson and the AuditK Project Contributors
 # SPDX-License-Identifier: Apache-2.0
-"""Conformance fixture providers for the three shipped adapters.
+"""Conformance fixture providers for the shipped adapters.
 
 Every native-format fixture below is synthetic and invented for this suite
 (no real corpus data, no real session/checkpoint/span content) -- same
@@ -21,13 +21,12 @@ from auditk.adapters.generic_otel import GENERIC_OTEL_HEALTH_DECLARATION, OtelTr
 from auditk.adapters.health import CLAUDE_CODE_HEALTH_DECLARATION
 from auditk.adapters.hermes import HERMES_HEALTH_DECLARATION, HermesTraceAdapter
 from auditk.adapters.langgraph import LANGGRAPH_HEALTH_DECLARATION, LangGraphTraceAdapter
-from auditk.adapters.pi import PiTraceAdapter
+from auditk.adapters.pi import PI_HEALTH_DECLARATION, PiTraceAdapter
 from auditk.schema import ActionType, Trace
 from tests.conformance.kit import (
     AdapterConformanceFixtures,
     HealthFixture,
     RedactionFixture,
-    RefusingAdapterFixtures,
 )
 
 # --- claude-code --------------------------------------------------------
@@ -461,28 +460,165 @@ _HERMES = AdapterConformanceFixtures(
 )
 
 
-PROVIDERS: list[AdapterConformanceFixtures] = [_CLAUDE_CODE, _LANGGRAPH, _GENERIC_OTEL, _HERMES]
+# --- pi ------------------------------------------------------------------
+# Native format: a list of parsed JSONL line dicts from a pi v3 session
+# file -- header first, then entries (confirmed against a real first-party
+# corpus AND the installed writer's own declarations, see
+# docs/pi-format-notes.md and tests/fixtures/pi/). The dicts below are
+# synthetic per this suite's convention, shaped to mirror those real bytes.
 
 
-# --- pi (gated stub) -----------------------------------------------------
-# Not a real adapter -- see auditk.adapters.pi / docs/pi-format-notes.md.
-# Every ingest() call refuses loudly regardless of `raw`, so this is a
-# RefusingAdapterFixtures, not an AdapterConformanceFixtures (see that
-# dataclass's docstring in kit.py for why the two can't share a shape).
-# Native inputs below are intentionally varied (empty, malformed, and a
-# minimal-valid-*looking* Pi-ish shape) to prove the refusal really is
-# input-shape-independent, not an accident of one particular fixture.
+def _pi_header(session_id: str = "pi-conformance-1") -> dict[str, Any]:
+    return {
+        "type": "session",
+        "version": 3,
+        "id": session_id,
+        "timestamp": "2026-09-07T12:00:00.000Z",
+        "cwd": "/home/user/project",
+    }
 
-_PI = RefusingAdapterFixtures(
+
+def _pi_entry(entry_id: str, parent: str | None, **fields: Any) -> dict[str, Any]:
+    return {
+        "id": entry_id,
+        "parentId": parent,
+        "timestamp": "2026-09-07T12:00:01.000Z",
+        **fields,
+    }
+
+
+def _pi_message(entry_id: str, parent: str | None, message: dict[str, Any]) -> dict[str, Any]:
+    return _pi_entry(entry_id, parent, type="message", message=message)
+
+
+def _pi_assistant_tool_use(
+    entry_id: str, parent: str | None, call_id: str, name: str, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    return _pi_message(
+        entry_id,
+        parent,
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "running a tool"},
+                {"type": "toolCall", "id": call_id, "name": name, "arguments": arguments},
+            ],
+            "timestamp": 0,
+        },
+    )
+
+
+def _pi_tool_result(
+    entry_id: str, parent: str | None, call_id: str, name: str, text: str
+) -> dict[str, Any]:
+    return _pi_message(
+        entry_id,
+        parent,
+        {
+            "role": "toolResult",
+            "toolCallId": call_id,
+            "toolName": name,
+            "content": [{"type": "text", "text": text}],
+            "isError": False,
+            "timestamp": 0,
+        },
+    )
+
+
+def _pi_redaction_fixture() -> RedactionFixture:
+    native = [
+        _pi_header(),
+        _pi_message(
+            "aa000001", None, {"role": "user", "content": "list the sandbox", "timestamp": 0}
+        ),
+        _pi_assistant_tool_use(
+            "aa000002", "aa000001", "call-ls", "bash", {"command": "ls sandbox/"}
+        ),
+        _pi_tool_result("aa000003", "aa000002", "call-ls", "bash", "file1\nfile2"),
+    ]
+
+    def _assert_redacted(trace: Trace) -> None:
+        tool_call = next(s for s in trace.steps if s.action.type == ActionType.TOOL_CALL)
+        assert tool_call.action.payload["input"] == {
+            "redacted": True,
+            "size": len(str({"command": "ls sandbox/"})),
+        }
+        tool_result = next(s for s in trace.steps if s.action.type == ActionType.ENV_EFFECT)
+        assert tool_result.action.payload["tool_result"] == {
+            "redacted": True,
+            "size": len(str([{"type": "text", "text": "file1\nfile2"}])),
+        }
+
+    return RedactionFixture(
+        redacting_adapter=PiTraceAdapter(strip_payloads=True),
+        native=native,
+        assert_redacted=_assert_redacted,
+    )
+
+
+def _pi_health_fixture() -> HealthFixture:
+    id_matched_paired = [
+        _pi_header(),
+        _pi_assistant_tool_use("aa000001", None, "call-read", "read", {"path": "/a"}),
+        _pi_tool_result("aa000002", "aa000001", "call-read", "read", "ok"),
+    ]
+    # pi toolCall blocks always carry a real id -- like Hermes, the honest
+    # id-less shape to model is "capture ended mid-call": a call issued,
+    # nothing after it.
+    id_less_trailing = [
+        _pi_header(),
+        _pi_assistant_tool_use("aa000001", None, "call-a", "read", {"path": "/a"}),
+    ]
+    # call-a's result never arrives, but call-b (issued after) round-trips.
+    id_matched_orphan = [
+        _pi_header(),
+        _pi_assistant_tool_use("aa000001", None, "call-a", "read", {"path": "/a"}),
+        _pi_assistant_tool_use("aa000002", "aa000001", "call-b", "bash", {"command": "echo hi"}),
+        _pi_tool_result("aa000003", "aa000002", "call-b", "bash", "hi"),
+    ]
+    # 4 entries of a type pi has never written, 1 known -- 80% unknown.
+    unknown_type_share = [
+        _pi_entry(f"aa00000{i}", None, type="totally-new-conformance-type") for i in range(4)
+    ] + [_pi_message("aa000009", None, {"role": "user", "content": "hi", "timestamp": 0})]
+    return HealthFixture(
+        declaration=PI_HEALTH_DECLARATION,
+        id_matched_paired_events=id_matched_paired,
+        id_less_trailing_events=id_less_trailing,
+        id_matched_orphan_events=id_matched_orphan,
+        unknown_type_share_events=unknown_type_share,
+    )
+
+
+_PI = AdapterConformanceFixtures(
     name="pi",
     adapter=PiTraceAdapter(),
     empty_native=[],
-    malformed_native={"not": "a list of session entries"},
-    minimal_valid_native=[
-        {"type": "session", "version": 3, "id": "sess-1", "timestamp": "2026-01-01T00:00:00Z"},
-        {"type": "message", "id": "a1", "parentId": None, "message": {"role": "user"}},
+    # A header followed by a message entry with no usable message dict --
+    # processed best-effort (defensive isinstance style), never a leaked
+    # internal exception; see docs/adapters.md's "malformed-input" section.
+    malformed_native=[
+        _pi_header("pi-conformance-malformed"),
+        _pi_entry("aa000001", None, type="message", message="not-a-dict"),
+        _pi_message("aa000002", "aa000001", {"role": "user", "content": "hi", "timestamp": 0}),
     ],
-    expected_message_fragment="gated on sample traces",
+    minimal_valid_native=[
+        _pi_header(),
+        _pi_message(
+            "aa000001", None, {"role": "user", "content": "list the sandbox", "timestamp": 0}
+        ),
+        _pi_assistant_tool_use(
+            "aa000002", "aa000001", "call-1", "bash", {"command": "ls sandbox/"}
+        ),
+        _pi_tool_result("aa000003", "aa000002", "call-1", "bash", "ok"),
+    ],
+    redaction=_pi_redaction_fixture(),
+    health=_pi_health_fixture(),
 )
 
-REFUSING_PROVIDERS: list[RefusingAdapterFixtures] = [_PI]
+PROVIDERS: list[AdapterConformanceFixtures] = [
+    _CLAUDE_CODE,
+    _LANGGRAPH,
+    _GENERIC_OTEL,
+    _HERMES,
+    _PI,
+]
