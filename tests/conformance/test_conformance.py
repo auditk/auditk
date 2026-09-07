@@ -40,6 +40,7 @@ from __future__ import annotations
 import pytest
 
 from auditk.adapters.health import SessionHealthInput, check_adapter_health
+from auditk.adapters.provenance import ProvenanceDeclaration
 from auditk.schema import Trace
 from tests.conformance.kit import AdapterConformanceFixtures, xfail_reason
 from tests.conformance.providers import PROVIDERS
@@ -145,3 +146,19 @@ class TestHealthUnknownTypeShare:
             declaration=fixtures.health.declaration,
         )
         assert not result.ok
+
+
+@pytest.mark.parametrize("fixtures", PROVIDERS, ids=_id)
+class TestProvenanceDeclaration:
+    """Every adapter MUST declare where its traces come from -- `UNKNOWN` is
+    always a legitimate, honest answer, so unlike redaction/health there is
+    no such thing as "no hook yet" here: this is a hard assertion, never an
+    `xfail` and never a `skip` (see `auditk.adapters.provenance`'s module
+    docstring and docs/adapters.md's "Trace provenance declaration"
+    section)."""
+
+    def test_adapter_declares_its_provenance(self, fixtures: AdapterConformanceFixtures) -> None:
+        declaration = fixtures.adapter.provenance_declaration
+        assert isinstance(declaration, ProvenanceDeclaration)
+        assert declaration.reason.strip()
+        assert declaration.name == fixtures.name
