@@ -7,11 +7,12 @@ shared by EndpointProber implementations.
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Any, ClassVar, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel
 
+from auditk.adapters.provenance import ProvenanceDeclaration
 from auditk.schema import (
     AgentConfig,
     EvidencePack,
@@ -38,7 +39,18 @@ class ProbeResponse(BaseModel):
 
 
 class TraceAdapter(Protocol):
-    """Convert raw adapter-specific data into a normalised Trace."""
+    """Convert raw adapter-specific data into a normalised Trace.
+
+    ``provenance_declaration`` (trace-provenance declaration, follow-up to
+    PR #15's forged-walk demo -- see ``auditk.adapters.provenance``) is a
+    required structural member, not just an ``ingest()`` implementation
+    detail: every adapter must say, unconditionally, whether the records it
+    reads are scheduler-derived, self-reported, or (the honest default)
+    unknown, because a trail's trustworthiness depends on how it was
+    captured, not just on what it says.
+    """
+
+    provenance_declaration: ClassVar[ProvenanceDeclaration]
 
     def ingest(self, raw: Any) -> Trace: ...
 

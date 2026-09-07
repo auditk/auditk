@@ -114,9 +114,10 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, ClassVar
 
 from auditk.adapters.health import HealthDeclaration
+from auditk.adapters.provenance import ProvenanceDeclaration, TraceProvenance
 from auditk.adapters.redaction import ContentKeysByActionType, redact_trace
 from auditk.schema import (
     Action,
@@ -559,6 +560,26 @@ HERMES_HEALTH_DECLARATION = HealthDeclaration(
 )
 
 
+# Trace-provenance declaration (follow-up to PR #15's forged-walk demo, see
+# `auditk.adapters.provenance` module docstring): Hermes' `messages` table
+# rows are written by the same runtime process for both the harness's own
+# bookkeeping and whatever the agent chooses to report about a tool call --
+# confirmed by reading `hermes_state.py`'s own write paths (see this
+# module's docstring above), which give no per-row marker distinguishing a
+# scheduler-independent write from the agent's own reported content.
+HERMES_PROVENANCE_DECLARATION = ProvenanceDeclaration(
+    name="hermes",
+    provenance=TraceProvenance.UNKNOWN,
+    reason=(
+        "Hermes' messages-table rows are all written by the same runtime "
+        "process the agent itself runs in -- hermes_state.py's own write "
+        "paths give no per-row marker separating harness bookkeeping from "
+        "the agent's own reported content, so this adapter cannot tell "
+        "which it was fed."
+    ),
+)
+
+
 class HermesTraceAdapter:
     """Structural TraceAdapter for Hermes-agent session message-row lists.
 
@@ -566,6 +587,8 @@ class HermesTraceAdapter:
     content-bearing payload keys via the shared post-ingest redaction pass
     (``auditk.adapters.redaction.redact_trace`` -- see module docstring).
     """
+
+    provenance_declaration: ClassVar[ProvenanceDeclaration] = HERMES_PROVENANCE_DECLARATION
 
     def __init__(self, strip_payloads: bool = False) -> None:
         self.strip_payloads = strip_payloads
