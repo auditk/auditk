@@ -368,18 +368,67 @@ class TestReportStripPayloads:
         assert "redacted" not in result.output.lower()
 
 
-class TestReportPiStubStripPayloads:
-    """`report --adapter pi --strip-payloads` refuses with the same gated
-    message as every other pi entry point -- see
-    tests/unit/test_cli_pi_stub.py::TestReportPiStub for the flag-less
-    case (this test only exists here because `--strip-payloads` on
-    `report` didn't exist yet when that module was written)."""
+class TestReportPiStripPayloads:
+    """`report --adapter pi --strip-payloads` runs the REAL pi adapter with
+    redaction (the gated stub this class used to pin was superseded when
+    the adapter shipped -- the documented one-way door in the conformance
+    suite; tests/unit/test_cli_pi_stub.py was deleted for the same reason)."""
 
-    def test_refuses_with_the_documented_message(self, tmp_path: Path) -> None:
-        from auditk.adapters.pi import PI_GATED_MESSAGE
-
+    def test_runs_cleanly_with_redaction(self, tmp_path: Path) -> None:
         in_file = tmp_path / "pi-session.json"
-        in_file.write_text(json.dumps([{"type": "session", "version": 3, "id": "sess-1"}]))
+        in_file.write_text(
+            json.dumps(
+                [
+                    {
+                        "type": "session",
+                        "version": 3,
+                        "id": "sess-1",
+                        "timestamp": "2026-09-07T12:00:00.000Z",
+                        "cwd": "/home/user/project",
+                    },
+                    {
+                        "type": "message",
+                        "id": "aa000001",
+                        "parentId": None,
+                        "timestamp": "2026-09-07T12:00:01.000Z",
+                        "message": {"role": "user", "content": "hello", "timestamp": 0},
+                    },
+                    {
+                        "type": "message",
+                        "id": "aa000002",
+                        "parentId": "aa000001",
+                        "timestamp": "2026-09-07T12:00:02.000Z",
+                        "message": {
+                            "role": "assistant",
+                            "content": [
+                                {"type": "text", "text": "running a command"},
+                                {
+                                    "type": "toolCall",
+                                    "id": "call-1",
+                                    "name": "bash",
+                                    "arguments": {"command": "ls"},
+                                },
+                            ],
+                            "timestamp": 0,
+                        },
+                    },
+                    {
+                        "type": "message",
+                        "id": "aa000003",
+                        "parentId": "aa000002",
+                        "timestamp": "2026-09-07T12:00:03.000Z",
+                        "message": {
+                            "role": "toolResult",
+                            "toolCallId": "call-1",
+                            "toolName": "bash",
+                            "content": [{"type": "text", "text": "file1"}],
+                            "isError": False,
+                            "timestamp": 0,
+                        },
+                    },
+                ]
+            )
+        )
 
         result = runner.invoke(
             app,
@@ -394,6 +443,5 @@ class TestReportPiStubStripPayloads:
             ],
         )
 
-        assert result.exit_code != 0
-        assert PI_GATED_MESSAGE in result.output
+        assert result.exit_code == 0
         assert "Traceback" not in result.output
