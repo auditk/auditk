@@ -36,6 +36,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from auditk.adapters.health import HealthDeclaration
 from auditk.schema import Trace
 
 PI_GATED_MESSAGE = (
@@ -74,3 +75,19 @@ class PiTraceAdapter:
 
     def ingest(self, raw: Any) -> Trace:
         raise PiAdapterGatedError()
+
+
+def ingest_pi_session(entries: list[dict[str, Any]]) -> Trace:
+    """RED-phase placeholder: importable, still gated. The real
+    implementation lands in Green against tests/fixtures/pi/."""
+    raise PiAdapterGatedError()
+
+
+# RED-phase placeholder so the conformance providers import cleanly; the
+# real declaration (v3 entry-type census, real id extractors, plan-anchor
+# explicitly unsupported) lands in Green.
+PI_HEALTH_DECLARATION = HealthDeclaration(
+    name="pi",
+    record_type=lambda _record: None,
+    known_record_types=frozenset(),
+)
