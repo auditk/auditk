@@ -57,6 +57,7 @@ from auditk.analysis.findings import (
     find_churn_bursts,
     find_commits_without_verify,
     find_error_clusters,
+    find_test_edits_after_failed_run,
     find_unobserved_delegations,
     find_writes_outside_roots,
 )
@@ -322,3 +323,255 @@ def test_commit_with_no_verify_anywhere_still_flags() -> None:
     # Guard the fix does not silence the true positive.
     trace = _bash_trace("git add . && git commit -m 'x'")
     assert len(find_commits_without_verify(trace, FindingsConfig())) == 1
+
+
+# --- test-edit-after-failed-run (Matt's pm-workflow test-integrity rule) ---
+#
+# Evidence base (2026-09-07 corpus sweep of 111 real claude-code sessions):
+# the trace grammar this rule reads is a Bash tool_call whose paired
+# env_effect (parent_step_id == the Bash step_id) carries the runner output
+# in `tool_result` plus an optional `is_error` flag, followed by
+# Edit/Write/NotebookEdit tool_calls carrying `input.file_path` and the edit
+# text in `old_string`/`new_string` (Edit), `content` (Write) or
+# `new_source` (NotebookEdit). Two false-positive traps observed in the real
+# corpus are pinned as tests below: a green run whose pipeline exits
+# non-zero (`is_error` true, output "330 passed"), and a test edit whose
+# file is NOT the one named in the failure output.
+
+
+_FAIL_OUTPUT = (
+    "FAILED tests/test_widget.py::test_renders - AssertionError: expected 3 got 2\n"
+    "1 failed, 4 passed in 0.51s"
+)
+
+
+def _call(step_id: str, name: str, tool_input: dict) -> Step:
+    return Step(
+        step_id=step_id,
+        trace_id="t",
+        timestamp=datetime(2026, 7, 1, tzinfo=UTC),
+        actor=Actor.AGENT,
+        action=Action(type=ActionType.TOOL_CALL, payload={"name": name, "input": tool_input}),
+    )
+
+
+def _result(step_id: str, parent_step_id: str, text: str, *, is_error: bool = False) -> Step:
+    payload: dict = {"tool_result": text}
+    if is_error:
+        payload["is_error"] = True
+    return Step(
+        step_id=step_id,
+        parent_step_id=parent_step_id,
+        trace_id="t",
+        timestamp=datetime(2026, 7, 1, tzinfo=UTC),
+        actor=Actor.TOOL,
+        action=Action(type=ActionType.ENV_EFFECT, payload=payload),
+    )
+
+
+def _steps_trace(*steps: Step) -> Trace:
+    return Trace(
+        trace_id="t",
+        flow_type=FlowType.CODE,
+        agent_config_ref="x",
+        steps=list(steps),
+        source_adapter="test",
+    )
+
+
+def _failed_run(run_id: str = "run1") -> tuple[Step, Step]:
+    return (
+        _call(run_id, "Bash", {"command": "pytest tests/test_widget.py -x --no-cov -q"}),
+        _result(f"{run_id}r", run_id, _FAIL_OUTPUT, is_error=True),
+    )
+
+
+def test_silent_test_edit_after_failed_run_is_flagged() -> None:
+    trace = _steps_trace(
+        *_failed_run(),
+        _call(
+            "edit1",
+            "Edit",
+            {
+                "file_path": "/repo/tests/test_widget.py",
+                "old_string": "assert widget.count == 3",
+                "new_string": "assert widget.count == 2",
+            },
+        ),
+    )
+    findings = find_test_edits_after_failed_run(trace, FindingsConfig())
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.rule_id == "test-edit-after-failed-run"
+    assert finding.severity == Severity.MEDIUM
+    assert finding.step_ids == ["run1", "edit1"]
+    assert finding.evidence.get("file_path") == "/repo/tests/test_widget.py"
+    assert finding.evidence.get("documented") is False
+
+
+def test_documented_test_edit_after_failed_run_is_info() -> None:
+    trace = _steps_trace(
+        *_failed_run(),
+        _call(
+            "edit1",
+            "Edit",
+            {
+                "file_path": "/repo/tests/test_widget.py",
+                "old_string": "assert widget.count == 3",
+                "new_string": (
+                    "# ISSUE & FIX (2026-09-07): the spec settled on 2 widgets, the\n"
+                    "# original assertion encoded a stale draft of the spec.\n"
+                    "assert widget.count == 2"
+                ),
+            },
+        ),
+    )
+    findings = find_test_edits_after_failed_run(trace, FindingsConfig())
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.INFO
+    assert findings[0].evidence.get("documented") is True
+
+
+def test_production_edit_between_failure_and_test_edit_clears_the_failure() -> None:
+    trace = _steps_trace(
+        *_failed_run(),
+        _call(
+            "fix1",
+            "Edit",
+            {
+                "file_path": "/repo/src/widget.py",
+                "old_string": "count = 3",
+                "new_string": "count = 2",
+            },
+        ),
+        _call(
+            "edit1",
+            "Edit",
+            {
+                "file_path": "/repo/tests/test_widget.py",
+                "old_string": "assert widget.count == 3",
+                "new_string": "assert widget.count == 2",
+            },
+        ),
+    )
+    assert find_test_edits_after_failed_run(trace, FindingsConfig()) == []
+
+
+def test_passing_run_disarms_a_prior_failure() -> None:
+    trace = _steps_trace(
+        *_failed_run(),
+        _call("run2", "Bash", {"command": "pytest tests/test_widget.py -q"}),
+        _result("run2r", "run2", "5 passed in 0.4s"),
+        _call(
+            "edit1",
+            "Edit",
+            {
+                "file_path": "/repo/tests/test_widget.py",
+                "old_string": "assert widget.count == 3",
+                "new_string": "assert widget.count == 2",
+            },
+        ),
+    )
+    assert find_test_edits_after_failed_run(trace, FindingsConfig()) == []
+
+
+def test_green_run_with_nonzero_exit_pipeline_does_not_arm() -> None:
+    # Real-corpus false positive (session 9ffc5a83): a ruff/grep pipeline sets
+    # is_error on a run whose output is all-green. Arming must require failure
+    # TEXT in the output, never the error flag alone.
+    trace = _steps_trace(
+        _call("run1", "Bash", {"command": "pytest tests/ -q && ruff check src/"}),
+        _result("run1r", "run1", "All checks passed!\n330 passed, 4 skipped", is_error=True),
+        _call(
+            "edit1",
+            "Edit",
+            {
+                "file_path": "/repo/tests/test_widget.py",
+                "old_string": "assert widget.count == 3",
+                "new_string": "assert widget.count == 2",
+            },
+        ),
+    )
+    assert find_test_edits_after_failed_run(trace, FindingsConfig()) == []
+
+
+def test_edit_to_test_file_not_named_in_failure_output_is_not_flagged() -> None:
+    # Real-corpus false positive (session 24d53066): a NEW test file written
+    # for an unrelated feature while some other test happened to be failing.
+    trace = _steps_trace(
+        *_failed_run(),
+        _call(
+            "write1",
+            "Write",
+            {"file_path": "/repo/tests/test_other_feature.py", "content": "def test_x(): ..."},
+        ),
+    )
+    assert find_test_edits_after_failed_run(trace, FindingsConfig()) == []
+
+
+def test_failure_output_naming_only_the_test_function_does_not_flag(
+    well_behaved_trace: Trace,
+) -> None:
+    # The well-behaved fixture contains `pytest -k test_auth_flow` failing with
+    # "FAILED test_auth_flow - AssertionError" (test NAME only, no file path)
+    # followed by an Edit of tests/test_auth.py. Correspondence requires the
+    # edited file's basename in the failure output, so this must stay clean —
+    # this is the rule's deliberate conservative bias, and it is also what
+    # keeps the engine-wide false-positive guard green.
+    findings = find_test_edits_after_failed_run(well_behaved_trace, FindingsConfig())
+    assert findings == []
+
+
+def test_each_test_edit_off_one_failure_is_flagged() -> None:
+    edit = {
+        "file_path": "/repo/tests/test_widget.py",
+        "old_string": "assert widget.count == 3",
+        "new_string": "assert widget.count == 2",
+    }
+    trace = _steps_trace(
+        *_failed_run(),
+        _call("edit1", "Edit", edit),
+        _call("edit2", "Edit", {**edit, "old_string": "assert widget.ok"}),
+    )
+    findings = find_test_edits_after_failed_run(trace, FindingsConfig())
+    assert [f.step_ids for f in findings] == [["run1", "edit1"], ["run1", "edit2"]]
+
+
+def test_custom_test_file_pattern_is_respected() -> None:
+    fail_output = "FAILED checks/check_widget.py::check_renders\n1 failed in 0.2s"
+    steps = (
+        _call("run1", "Bash", {"command": "pytest checks/ -q"}),
+        _result("run1r", "run1", fail_output, is_error=True),
+        _call(
+            "edit1",
+            "Edit",
+            {
+                "file_path": "/repo/checks/check_widget.py",
+                "old_string": "assert 3",
+                "new_string": "assert 2",
+            },
+        ),
+    )
+    assert find_test_edits_after_failed_run(_steps_trace(*steps), FindingsConfig()) == []
+    custom = FindingsConfig(test_file_pattern=r"(^|/)checks/")
+    findings = find_test_edits_after_failed_run(_steps_trace(*steps), custom)
+    assert len(findings) == 1
+
+
+def test_analyze_trace_includes_test_edit_after_failed_run() -> None:
+    trace = _steps_trace(
+        *_failed_run(),
+        _call(
+            "edit1",
+            "Edit",
+            {
+                "file_path": "/repo/tests/test_widget.py",
+                "old_string": "assert widget.count == 3",
+                "new_string": "assert widget.count == 2",
+            },
+        ),
+    )
+    report = analyze_trace(trace)
+    matched = [f for f in report.findings if f.rule_id == "test-edit-after-failed-run"]
+    assert len(matched) == 1
+    assert report.severity_counts.get("medium", 0) >= 1

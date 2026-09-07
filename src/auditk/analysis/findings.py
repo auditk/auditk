@@ -63,6 +63,28 @@ _VERIFY_COMMAND_PATTERN = re.compile(
 # `git commit` invocation, matched case-insensitively against Bash command text.
 _GIT_COMMIT_PATTERN = re.compile(r"\bgit\s+commit\b", re.IGNORECASE)
 
+# Default patterns for find_test_edits_after_failed_run. Unlike
+# _VERIFY_COMMAND_PATTERN these cover test RUNNERS only (a lint run cannot
+# "fail a test"), and the failure pattern deliberately requires failure TEXT
+# in the runner output — an is_error flag alone is not evidence of a failing
+# test, because a green run inside a pipeline (`pytest -q && ruff check`,
+# `... | grep`) can exit non-zero. Observed on the 2026-09-07 corpus sweep.
+DEFAULT_TEST_COMMAND_PATTERN = (
+    r"\b(?:pytest|py\.test|unittest|jest|vitest)\b"
+    r"|\bnpm\s+(?:test|run\s+test)\b"
+    r"|\bpnpm\s+(?:test|run\s+test)\b"
+    r"|\byarn\s+test\b"
+    r"|\bgo\s+test\b"
+    r"|\bcargo\s+test\b"
+)
+DEFAULT_TEST_FAILURE_PATTERN = (
+    r"[1-9]\d*\s+(?:failed|errors?)\b|\bFAILED\b|\bAssertionError\b|\berrors? during collection\b"
+)
+DEFAULT_TEST_FILE_PATTERN = (
+    r"(^|/)tests?/|(^|/)__tests__/|(^|/)test_[^/]*$|_test\.[a-z]+$"
+    r"|\.(test|spec)\.[a-z]+$|(^|/)conftest\.py$"
+)
+
 
 class Severity(str, Enum):
     """Finding severity, ordered HIGH > MEDIUM > LOW > INFO."""
@@ -114,6 +136,13 @@ class FindingsConfig(BaseModel):
     error_cluster_window: int = 5
     # tripwire name -> regex. None => DEFAULT_TRIPWIRE_PATTERNS.
     tripwire_patterns: dict[str, str] | None = None
+    # Regex identifying a Bash command as a test run (case-insensitive).
+    test_command_pattern: str = DEFAULT_TEST_COMMAND_PATTERN
+    # Regex identifying failure text in a test run's output (case-sensitive:
+    # pytest/vitest failure markers are case-significant).
+    test_failure_pattern: str = DEFAULT_TEST_FAILURE_PATTERN
+    # Regex identifying an edited file_path as a test file (case-sensitive).
+    test_file_pattern: str = DEFAULT_TEST_FILE_PATTERN
 
 
 # --- Small shared helpers over Step/Action shape -----------------------
@@ -592,6 +621,49 @@ def find_abandoned_artifacts(trace: Trace, config: FindingsConfig) -> list[Findi
             )
         )
     return findings
+
+
+def find_test_edits_after_failed_run(trace: Trace, config: FindingsConfig) -> list[Finding]:
+    """Flag test-file edits made off the back of a failed test run.
+
+    rule_id: ``"test-edit-after-failed-run"``, severity MEDIUM (silent edit)
+    or INFO (edit adds at least one new comment line — a documented
+    correction, per the test-integrity rule's "documented reason" clause).
+
+    Arming: a ``tool_call`` Bash step whose ``input["command"]`` matches
+    ``config.test_command_pattern`` (case-insensitively) and whose paired
+    env_effect result (the first env_effect step with
+    ``parent_step_id == step.step_id``) has ``tool_result`` text matching
+    ``config.test_failure_pattern`` arms the rule. Failure TEXT is required;
+    the result's ``is_error`` flag alone must not arm (a green run in a
+    non-zero-exit pipeline is not a failing test). A later matching test run
+    whose result does not match the failure pattern (or has no paired
+    result) disarms.
+
+    Clearing: any editor tool_call (``EDITOR_TOOL_NAMES``) whose
+    ``input["file_path"]`` does NOT match ``config.test_file_pattern`` is a
+    production-code edit and disarms — the agent went to fix the code, which
+    is the test-integrity-correct move.
+
+    Firing: while armed, an editor tool_call whose ``file_path`` matches
+    ``config.test_file_pattern`` AND whose basename appears in the armed
+    failure output fires one Finding (the rule stays armed, so every such
+    edit off one failure fires separately). The basename-correspondence
+    requirement is deliberate conservative bias: it suppresses edits to test
+    files unrelated to the failure, at the cost of missing runs whose output
+    names only the test function.
+
+    The edit is "documented" when its new text (``new_string`` /
+    ``content`` / ``new_source``) contains at least one comment line
+    (stripped line starting ``#``, ``//``, ``/*`` or ``*``) not present in
+    ``old_string``. Findings carry
+    ``step_ids=[failed_run_step_id, edit_step_id]`` and evidence including
+    ``file_path``, ``tool``, ``command``, ``failed_run_step_id`` and
+    ``documented``. This rule surfaces candidates for human review — it
+    cannot judge whether a documented reason is honest, only whether one
+    exists.
+    """
+    raise NotImplementedError
 
 
 def analyze_trace(trace: Trace, config: FindingsConfig | None = None) -> FindingsReport:
