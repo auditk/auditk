@@ -535,3 +535,11 @@ def render_markdown(report: ReportModel) -> str:
         "",
     ]
     return "\n".join(sections)
+
+
+# --- render_html ---------------------------------------------------------
+
+
+def render_html(report: ReportModel) -> str:
+    """RED-phase placeholder: the HTML renderer lands in Green."""
+    raise NotImplementedError("render_html is not implemented yet")
