@@ -1,214 +1,181 @@
-# Pi adapter — format notes (PROVISIONAL / UNVERIFIED)
+# Pi adapter — format notes (CONFIRMED against real bytes, 2026-09-07)
 
-**Status: gated.** There is no `auditk.adapters.pi` implementation. `pi` is
-registered (`src/auditk/adapters/pi.py`) so `--adapter pi` is a reachable,
-documented CLI name, but every entry point on it refuses loudly instead of
-parsing anything — see that module's docstring for the exact message. This
-page is the reason why, and the list of what has to change before that stub
-can become a real adapter.
+**Status: evidence gate cleared.** This page was rewritten from a first-party
+live corpus (real session files written by an npm-installed pi, committed
+under `tests/fixtures/pi/`) plus a read of the installed release's own writer
+source — the same discipline `hermes.py` followed. The previous revision of
+this page was built from public docs only and said so loudly; its "what a
+sample must show us" checklist is resolved item-by-item at the bottom.
 
-Everything below is built from **public documentation only**. No Pi session
-trace — sample or real — has been read by anyone working on this adapter.
-Per `docs/adapters.md`'s adapter-writing discipline (the same discipline
-`hermes.py` followed: "format discovered by reading the writer source... not
-guessed from data alone"), reading public docs is not a substitute for that.
-Docs describe an intended shape; they drift from what a specific install, a
-specific version, and a specific set of installed plugins/skills actually
-write to disk. Nothing in this file should be typed up as parsing code
-without a real sample confirming it first.
+## Which "Pi" this is — now confirmed
 
-## Which "Pi" this is
+**Mario Zechner's `pi` coding agent.** Installed and run locally:
+`@earendil-works/pi-coding-agent` **0.85.1** from npm (`pi --version` →
+`0.85.1`; the older `@mariozechner/pi-coding-agent` mirror is at 0.73.1 and
+stale). Source read at `github.com/earendil-works/pi` plus — decisive for
+format questions — the **installed package's own compiled declarations**
+(`dist/core/session-manager.d.ts`, `dist/core/messages.d.ts`), which are the
+writer that produced our fixture bytes.
 
-Working identification: **Mario Zechner's `pi` coding-agent harness**
-(`pi.dev`; source at `github.com/earendil-works/pi`, formerly/also mirrored
-at `github.com/badlogic/pi-mono`; published on npm as
-`@mariozechner/pi-coding-agent` / `@earendil-works/pi-coding-agent`). This is
-a terminal coding-agent CLI, TypeScript, actively developed, explicitly
-designed to be reshaped via extensions/skills/plugins, with a **publicly
-documented, versioned JSONL session format** (`pi.dev/docs/latest/session-format`)
-— see "What the docs say" below.
+Radek Gruchalski confirmed on the 2026-09-07 call that pi is his harness.
+Which extensions/skills he runs is still unconfirmed (see "What still needs
+Radek" below).
 
-Confidence: **moderate, not confirmed**. The chain of evidence:
+## The on-disk format (v3, confirmed)
 
-- Radek Gruchalski is our prospective external tester for a "Pi" adapter.
-- A plugin, `baryonlabs/pi-agent-harness` (also on npm as
-  `@baryonlabs/pi-agent-harness`), exists that is explicitly built for "the
-  pi coding agent" and adds a multi-agent/subagent delegation tool on top of
-  it (README: "a pi coding-agent plugin/package... a bundled subagent
-  (single/parallel/chain) delegation tool", "ported from Claude Code").
-  `baryonlabs` is a plausible match for Radek's own org/handle, but **this
-  was not confirmed** — a web search did not turn up a direct, citable link
-  between the `radekg` GitHub account and the `baryonlabs` org (no visible
-  shared membership, no first-party statement found). Treat the
-  "Radek uses baryonlabs/pi-agent-harness on top of Mario Zechner's pi" chain
-  as a reasonable guess, not an established fact.
-- No alternative "Pi" candidate turned up in searching that plausibly matches
-  "a coding-agent harness a named individual external tester would run
-  against auditk" better than this one.
+One JSONL file per session at
+`~/.pi/agent/sessions/--<encoded-cwd>--/<ISO-timestamp>_<uuidv7>.jsonl`.
 
-**If this turns out to be the wrong Pi**, everything below is still a
-reasonable template for what to ask for and check, but the concrete shape
-(field names, storage location) will be wrong and must not be reused as-is.
-Before writing a real parser, confirm directly with Radek which tool,
-which version, and which plugins/skills are installed.
+**Header (line 1):**
 
-## What the docs say (unverified against real data)
+```json
+{"type":"session","version":3,"id":"<uuid>","timestamp":"<ISO8601>","cwd":"/abs/path"}
+```
 
-Source: `pi.dev/docs/latest/session-format` ("JSONL session file format,
-entry types, and SessionManager API"), plus `mariozechner.at/posts/2025-11-30-pi-coding-agent/`
-(the author's own design-rationale post) and the `pi.dev` front page.
+`parentSession` (optional) appears on forked sessions and is an **absolute
+file path to the parent session file**, not an id — a real cross-session
+link, stronger than anything Hermes has. `CURRENT_SESSION_VERSION = 3`;
+versions 1–2 auto-migrate on load (`migrateSessionEntries`). `version` is
+typed *optional* in the writer (`version?: number`) — do not require it.
 
-**Framing.** One JSONL file per session,
-`~/.pi/agent/sessions/--<path>--/<timestamp>_<uuid>.jsonl`. Unlike Hermes
-(flat SQLite rows) or Claude Code (an append-only JSONL list that is
-*effectively* linear), Pi's own file is documented as a **tree**: every
-non-header line has `"id"` (an 8-character hex string) and `"parentId"`
-(another entry's id, or `null` for the first entry), and the docs describe
-real branching ("Branching creates new children from earlier entries",
-`SessionManager.branch(entryId)` / `createBranchedSession(leafId)`, a
-`/tree` command to navigate and branch from any earlier point). This is a
-structurally different shape from every adapter shipped today — none of
-`claude_code.py`/`langgraph.py`/`generic_otel.py`/`hermes.py` ingest a file
-that can legitimately contain more than one path from root to "the current
-state." A Pi adapter has to decide, and confirm against real files, whether
-"ingest a session" means walking the single path a `buildContextEntries()`-
-style call would produce (root to one leaf) or something else — auditk's
-`Trace` is a flat `list[Step]`, not a tree, so this decision is load-bearing,
-not cosmetic.
+**Every subsequent line** is one entry:
 
-**Header.** First line only: `{"type":"session","version":3,"id":"uuid",
-"timestamp":"...","cwd":"/path"}` (docs state version 3 is current; versions
-1–2 "auto-migrate on load" — i.e. the on-disk shape has already changed at
-least twice). A `"parentSession"` field marks a forked session. This is the
-version-marker analogue of Hermes' `schema_version` PRAGMA or Claude Code's
-event-shape churn (`TodoWrite` → `TaskCreate`/`TaskUpdate`) — expect it to
-keep moving.
+```json
+{"type":"<entry type>","id":"<8-hex>","parentId":"<8-hex>|null","timestamp":"<ISO8601>", ...}
+```
 
-**Entry types (documented).** `message` (role one of `user` / `assistant` /
-`toolResult` / `bashExecution` / `custom` / `branchSummary` /
-`compactionSummary`), `model_change`, `thinking_level_change`, `compaction`,
-`branch_summary`, `custom` (state-only, non-message), `custom_message`
-(participates in LLM context), `label`, `session_info`.
+Entries form a **tree** (append-only; `branch()` moves a leaf pointer, so one
+parent can have several children), but in ordinary non-interactive usage the
+chain is strictly linear — confirmed on all three fixtures: every entry's
+`parentId` is the previous entry's `id`. **File order is append order and
+therefore chronological**, even when branches exist.
 
-**Ids / pairing.** An `assistant` message's `content` array can contain a
-`ToolCall` (`{"type":"toolCall","id":"...","name":"...","arguments":{...}}`);
-a later `toolResult` message references it by `"toolCallId"` (+
-`"toolName"`, `"content"`, `"isError"` boolean). If this is accurate and
-consistently populated, it is a real id-pairing concept — the same category
-as Claude Code's `tool_use.id`/`tool_result.tool_use_id` and Hermes'
-`tool_calls[].id`/`tool_call_id`, not the "no such concept" case LangGraph
-and generic-otel are in. **Unverified**: whether `toolCallId` is ever
-missing/null in practice, and whether ids are unique within one session file
-or only within one branch.
+**Entry type vocabulary** (the installed writer's full `SessionEntry` union —
+this is the health-canary allow-list):
 
-**Declared intent.** No documented precedence stack (narration → thinking →
-standing plan) the way Claude Code's/Hermes' three-tier one is. An
-`assistant` message's `content` array can hold `TextContent` and
-`ThinkingContent` blocks alongside tool calls — so *inline narration* and a
-*thinking-block-style weaker proxy* both plausibly exist as adapter inputs,
-mirroring the first two tiers of Claude Code/Hermes. The third tier
-(standing plan from a todo/plan-tracking tool) is the one genuine
-**documented absence**: Mario Zechner's own post states Pi deliberately has
-"No built-in to-do tracking (users write to files instead)" and "No plan
-mode (persistent planning uses external `PLAN.md` files)". Vanilla Pi has no
-analogue of `TodoWrite`/Hermes' `todo` tool at all — there is nothing to
-anchor a standing plan on unless a specific tester's installed
-skill/extension adds one (see "Delegation" below for why this matters for
-Radek specifically).
+| type | fields beyond the base | seen in fixtures |
+|---|---|---|
+| `message` | `message` (an AgentMessage, below) | yes |
+| `model_change` | `provider`, `modelId` | yes |
+| `thinking_level_change` | `thinkingLevel` | yes |
+| `compaction` | `summary`, `firstKeptEntryId`, `tokensBefore`, `details?`, `usage?`, `fromHook?` | no (from writer source) |
+| `branch_summary` | `fromId`, `summary`, `details?`, `usage?`, `fromHook?` | no (from writer source) |
+| `custom` | `customType`, `data?` — extension state, NOT in LLM context | no (from writer source) |
+| `custom_message` | `customType`, `content` (string or blocks), `display`, `details?` — IS in LLM context | no (from writer source) |
+| `label` | `targetId`, `label` | no (from writer source) |
+| `session_info` | `name?` | no (from writer source) |
 
-**Delegation.** Also a documented absence in vanilla Pi: "No sub-agents
-(spawns separate sessions via bash for transparency)" — i.e. core Pi has no
-built-in multi-transcript delegation concept comparable to Claude Code's
-`Task`/`Agent` tool or Hermes' `delegate_task`, and by the author's own
-description a "delegated" call is just an ordinary bash invocation of
-another `pi` process, with nothing in the parent session file linking it to
-the child session it spawned — if anything, an even weaker link than
-Hermes' (which at least gets a `parent_session_id` column on the child row).
-**But** — this is the one place the identification uncertainty above matters
-most — if Radek is in fact running `baryonlabs/pi-agent-harness` on top of
-core Pi, that plugin adds its own "bundled subagent (single/parallel/chain)
-delegation tool," which is exactly the kind of extension entry
-(`custom`/`custom_message`, or an ordinary `toolCall` to a plugin-defined
-tool) the documented format allows for but does not specify the shape of.
-Whether *that* delegation tool's calls carry any id linking a call to a
-spawned child session is completely unknown from public docs and must come
-from a real sample.
+**Message roles** (`message.message.role`): `user`, `assistant`, `toolResult`
+(all three in fixtures), plus from the writer source: `bashExecution`
+(`command`, `output`, `exitCode`, `cancelled`, `truncated`,
+`excludeFromContext?` — the TUI `!` command), `custom`, `branchSummary`,
+`compactionSummary`.
 
-**What an adapter must NOT invent (recap from docs/adapters.md, applied
-here specifically).** No synthesised standing-plan step if core Pi truly has
-no plan-tracking tool in Radek's actual setup. No fabricated
-call/child-session pairing for delegation, exactly Hermes' "never clearable
-from a single ingest() call" discipline, likely stronger here since even the
-parent-session-id-style weak link Hermes has may not exist. No assumption
-that `content`/`toolCall`/`toolResult` fields are always present in the
-documented shape — a real file may show optional fields, extension-added
-fields, or an older un-migrated version.
+**Assistant message shape** (fixture-confirmed): `content` is an array of
+`{"type":"thinking","thinking":...,"thinkingSignature":...}`,
+`{"type":"text","text":...}` and
+`{"type":"toolCall","id":...,"name":...,"arguments":{...}}` blocks, plus
+envelope fields `api`, `provider`, `model`, `usage`, `stopReason`
+(`"toolUse"`/`"stop"`/...), `rawStopReason`, `responseId`, `timestamp`
+(epoch-ms — note the *entry* timestamp is ISO-8601; both exist).
 
-## What sample traces must show us (mirrors what Hermes discovery needed)
+**Id pairing is real.** A `toolCall.id` is echoed verbatim as the resolving
+`toolResult` message's `toolCallId` (with `toolName` and `isError` boolean
+alongside). Multi-tool-call turns are real: `session-rich.jsonl` has one
+assistant message carrying two `toolCall` blocks, answered by two separate
+`toolResult` message entries in order. Same category as Claude Code and
+Hermes: pairing by id, never by proximity.
 
-A usable sample set is **not** "one short pi session." Hermes' adapter was
-built by reading three separate source files
-(`hermes_state.py`, `tools/delegate_tool.py`, `tools/todo_tool.py`) plus a
-live corpus; Pi needs the equivalent — real files, not just docs, covering:
+**Declared intent: two tiers, no third.** Narration (`text` blocks) and
+`thinking` blocks coexist in one assistant message (fixture-confirmed; over
+an OpenAI-compatible backend the `reasoning_content` stream lands as a
+`thinking` block with `thinkingSignature: "reasoning_content"`). Vanilla pi
+has **no plan/todo tool** — the author's own design decision ("no built-in
+to-do tracking", "no plan mode") — so unlike Claude Code/Hermes there is no
+standing-plan third tier. Precedence for the adapter: narration wins, then
+thinking, then `None`. A plan-tracking *extension* would surface as `custom`/
+`custom_message` entries or a `toolCall` to an extension tool; nothing may be
+synthesised from those without a real sample of the specific extension.
 
-1. **Record framing.** At least one real `.jsonl` file, read raw (not
-   through any `pi` CLI post-processing), confirming: the header line shape
-   exactly as documented or not; whether `version` is really `3` on Radek's
-   install or an older/newer number; whether the file is genuinely a tree
-   (multiple children off one `parentId`) in ordinary single-threaded usage,
-   or effectively linear until `/tree` is used on purpose — this decides
-   whether "ingest a session" can stay a simple root-to-tail walk for the
-   common case.
-2. **Ids / pairing.** Confirmed presence and uniqueness of `toolCall.id` and
-   `toolResult.toolCallId` across a session with at least one multi-tool-call
-   assistant turn (the Claude-Code/Hermes precedent: id chaining across
-   several tool calls in one message needs a real multi-call example to
-   pin, not a single-call one). Confirmation of whether `toolCallId` is ever
-   absent/null on a real `toolResult` row.
-3. **Intent.** A real assistant message that has both `TextContent` and a
-   `ThinkingContent` block, to confirm which one this adapter should prefer
-   (mirrors Claude Code's/Hermes' "narration wins over thinking" rule) — and
-   confirmation of whether Radek's actual toolset includes any plan/todo
-   tracking tool at all (a skill, not core Pi) that could be a legitimate
-   third precedence tier, or whether `declared_intent`'s only sources here
-   are narration and thinking, full stop.
-4. **Delegation.** Direct evidence of whether Radek's setup uses
-   `pi-agent-harness` (or any other delegation-adding plugin) at all. If it
-   does: a real transcript showing what a delegation tool call's `toolCall`/
-   `toolResult` (or `custom`/`custom_message`) entries actually look like,
-   and whether anything at all — a session id, a file path, a hint — links
-   a specific delegation call to the child session(s) it spawned. If the
-   answer is "nothing links them," this adapter's delegation handling is a
-   one-line decision (`delegation_unobserved = True` unconditionally, same
-   as Hermes) — but that has to be confirmed, not assumed, exactly per
-   `docs/adapters.md`'s "No fabricated pairings" rule.
-5. **Version markers / drift risk.** Real header lines across more than one
-   session file/date, to see whether `version` actually changes across
-   Radek's own session history (the docs already admit two past migrations)
-   — and whether an adapter reading only `version: 3`'s documented shape
-   would silently mis-read an older, auto-migrated-on-load file if it is
-   ever handed the pre-migration bytes rather than what the `pi` CLI itself
-   would produce after opening it.
-6. **Record-type vocabulary for the health canary.** A `role`/`type` census
-   across real files (the `role(record) -> known_record_types` allow-list
-   `adapters/health.py` needs, the same census `hermes.py`'s
-   `KNOWN_RECORD_TYPES` comment describes doing against a live corpus) —
-   the documented type list above is what the docs say exists, not a
-   confirmed exhaustive list of what a real install actually emits
-   (extension/plugin entries in particular are the likely source of
-   undocumented types).
-7. **Redaction surface.** Which fields on a real `toolCall`/`toolResult`
-   pair actually carry sensitive content (`arguments`, `content`) so a
-   `REDACTION_CONTENT_KEYS` declaration (see `docs/adapters.md`'s
-   "Redaction pass-through") can be written correctly — and whether
-   `bashExecution` entries (`command`/`output`, a message role of their own,
-   not folded into `toolCall`/`toolResult`) need their own redaction keys,
-   since nothing shipped today has an analogous role.
+**Delegation.** Vanilla pi has no subagent concept (a "delegated" run is an
+ordinary `bash` invocation of another `pi` process; nothing links parent to
+child). The one real cross-session link is the **fork**: `parentSession`
+(header, absolute path) — and a forked file **copies the parent's entries
+verbatim, original ids preserved**, then appends (fixture-confirmed). So a
+forked session file is self-contained; no stitching is needed or permitted.
+Tool-call steps never get delegation markers in vanilla pi.
 
-None of the above should be inferred, guessed, or stubbed with synthetic
-data standing in for a real trace. When real samples exist (supplied by
-Radek under explicit permission — never pulled from `~/.claude/projects` or
-`~/.hermes`, which are read-only and unrelated to Pi anyway), this file
-should be rewritten from them the way `hermes.py`'s module docstring was:
-concrete field names confirmed by reading the actual bytes, not the docs
-page.
+**Version drift risk, concrete.** The git repo's unreleased main has a
+**v4 storage rewrite** (`packages/agent/src/harness/session/jsonl/`): header
+becomes `{"v":4,"kind":"header","id",...,"createdAt":<epoch-ms>}` and every
+other line becomes a transaction of committed writes
+(`{"kind":"entry"|"usage"|"value"|"list","seq":...}`), with v3 handled as a
+legacy import. The released 0.85.1 still writes v3 (its coding agent uses its
+own `SessionManager`, not the new storage engine). The adapter must
+**detect a v4 header and refuse loudly with a version message**, never
+half-parse it; when a v4 release ships, that refusal is the signal to extend.
+
+## How this corpus was generated
+
+pi 0.85.1 was pointed, via `~/.pi/agent/models.json` (custom provider,
+`api: "openai-completions"`), at a local scripted OpenAI-compatible SSE
+server (`tests/fixtures/pi/generation-server.py`), then run non-interactively
+(`pi --print ...`, and `pi --fork <id> --print ...` for the fork case) in a
+sandbox workspace. The **writer and the tool executions are real pi**; only
+the model's outputs were scripted (which also mirrors the actual target
+deployment: pi against a self-hosted OpenAI-compatible endpoint — exactly
+Radek's llama.cpp setup). pi's builtin tool surface, from its own request
+bodies: `read`, `bash`, `edit`, `write`.
+
+## Assumed grammar (the one-paragraph statement for review)
+
+A pi session is one JSONL file: line 1 a v3 header
+(`type:"session"`, optional `version`, `id`, ISO `timestamp`, `cwd`, optional
+`parentSession` absolute path); every other line an entry with `type`, 8-hex
+`id`, `parentId` (null only on the first entry), ISO `timestamp`, and
+type-specific fields per the table above, in append (= chronological) order,
+forming a tree that is linear except where interactive branching occurred.
+The adapter ingests **all entries in file order**, maps `message` entries to
+steps by role (`user` → USER utterance; `assistant` → one step per
+text/toolCall action, thinking as intent tier 2; `toolResult` → ENV_EFFECT
+paired by verbatim `toolCallId`; `bashExecution` → its own TOOL_CALL+result
+shape), maps `model_change`/`thinking_level_change`/`compaction`/
+`branch_summary`/`session_info`/`label` to STATE_TRANSITION steps, surfaces
+unknown entry types and unknown `customType`s rather than dropping them,
+preserves `parentId` as `parent_step_id`, refuses loudly on a v4/unknown
+header, and never invents pairings, plans, or delegation links.
+
+## The old checklist, resolved
+
+1. **Framing** — v3 confirmed on real bytes; effectively linear in ordinary
+   usage; tree structure preserved via `parentId`. Ingest = file order (an
+   audit wants abandoned branches visible, and append order is
+   chronological), not a root-to-leaf context walk.
+2. **Ids/pairing** — real, verbatim, multi-call turn pinned in fixtures.
+   `toolCallId` never absent in the corpus; treat a missing one as an
+   unpaired result, never guess.
+3. **Intent** — narration + thinking tiers confirmed in one real message;
+   third tier confirmed absent in vanilla pi.
+4. **Delegation** — none in vanilla; fork link is a header path, forks are
+   self-contained copies. Radek's extension list still unknown.
+5. **Version markers** — `version: 3` on all three fixture headers; field
+   optional in the writer type; v1–2 migrate on load; unreleased v4 shape
+   documented above with a mandatory loud refusal.
+6. **Type census** — the installed writer's full unions transcribed above;
+   health canary allow-list = the 9 entry types + observed roles.
+7. **Redaction surface** — `toolCall.arguments` and `toolResult.content` are
+   the sensitive keys (TOOL_CALL `input` / ENV_EFFECT `tool_result` after
+   mapping); `bashExecution.command`/`.output` need their own keys, a role no
+   shipped adapter has.
+
+## What still needs Radek
+
+Only one thing, and it no longer blocks the adapter: **which extensions and
+skills his pi runs.** Extension entries (`custom`/`custom_message`, unknown
+`customType`s, extension tools in `toolCall.name`) are format-legal and the
+adapter surfaces them without parsing; a sample from his actual install would
+let us decide whether any of them deserve first-class mapping (a plan tool
+would become intent tier 3; a delegation tool would need its own
+unobserved-delegation marking). His raw session files, supplied under
+explicit permission, remain the gold standard the corpus here approximates —
+never pulled from anyone's `~/.pi` without that permission.
