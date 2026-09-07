@@ -70,6 +70,9 @@ def test_load_ruleset_defaults_match_findings_config_defaults(tmp_path: Path) ->
     assert config.error_cluster_k == defaults.error_cluster_k
     assert config.error_cluster_window == defaults.error_cluster_window
     assert config.tripwire_patterns == DEFAULT_TRIPWIRE_PATTERNS
+    assert config.test_command_pattern == defaults.test_command_pattern
+    assert config.test_failure_pattern == defaults.test_failure_pattern
+    assert config.test_file_pattern == defaults.test_file_pattern
 
 
 # --- precedence ----------------------------------------------------------

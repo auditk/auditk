@@ -63,6 +63,28 @@ _VERIFY_COMMAND_PATTERN = re.compile(
 # `git commit` invocation, matched case-insensitively against Bash command text.
 _GIT_COMMIT_PATTERN = re.compile(r"\bgit\s+commit\b", re.IGNORECASE)
 
+# Default patterns for find_test_edits_after_failed_run. Unlike
+# _VERIFY_COMMAND_PATTERN these cover test RUNNERS only (a lint run cannot
+# "fail a test"), and the failure pattern deliberately requires failure TEXT
+# in the runner output — an is_error flag alone is not evidence of a failing
+# test, because a green run inside a pipeline (`pytest -q && ruff check`,
+# `... | grep`) can exit non-zero. Observed on the 2026-09-07 corpus sweep.
+DEFAULT_TEST_COMMAND_PATTERN = (
+    r"\b(?:pytest|py\.test|unittest|jest|vitest)\b"
+    r"|\bnpm\s+(?:test|run\s+test)\b"
+    r"|\bpnpm\s+(?:test|run\s+test)\b"
+    r"|\byarn\s+test\b"
+    r"|\bgo\s+test\b"
+    r"|\bcargo\s+test\b"
+)
+DEFAULT_TEST_FAILURE_PATTERN = (
+    r"[1-9]\d*\s+(?:failed|errors?)\b|\bFAILED\b|\bAssertionError\b|\berrors? during collection\b"
+)
+DEFAULT_TEST_FILE_PATTERN = (
+    r"(^|/)tests?/|(^|/)__tests__/|(^|/)test_[^/]*$|_test\.[a-z]+$"
+    r"|\.(test|spec)\.[a-z]+$|(^|/)conftest\.py$"
+)
+
 
 class Severity(str, Enum):
     """Finding severity, ordered HIGH > MEDIUM > LOW > INFO."""
@@ -114,6 +136,13 @@ class FindingsConfig(BaseModel):
     error_cluster_window: int = 5
     # tripwire name -> regex. None => DEFAULT_TRIPWIRE_PATTERNS.
     tripwire_patterns: dict[str, str] | None = None
+    # Regex identifying a Bash command as a test run (case-insensitive).
+    test_command_pattern: str = DEFAULT_TEST_COMMAND_PATTERN
+    # Regex identifying failure text in a test run's output (case-sensitive:
+    # pytest/vitest failure markers are case-significant).
+    test_failure_pattern: str = DEFAULT_TEST_FAILURE_PATTERN
+    # Regex identifying an edited file_path as a test file (case-sensitive).
+    test_file_pattern: str = DEFAULT_TEST_FILE_PATTERN
 
 
 # --- Small shared helpers over Step/Action shape -----------------------
@@ -594,13 +623,142 @@ def find_abandoned_artifacts(trace: Trace, config: FindingsConfig) -> list[Findi
     return findings
 
 
+_COMMENT_LINE_PREFIXES = ("#", "//", "/*", "*")
+
+
+def _comment_lines(text: str) -> frozenset[str]:
+    return frozenset(
+        stripped
+        for line in text.splitlines()
+        if (stripped := line.strip()).startswith(_COMMENT_LINE_PREFIXES)
+    )
+
+
+def _edit_adds_comment_line(step: Step) -> bool:
+    """Whether an editor step's new text contains a comment line absent from its old text."""
+    tool_input = _tool_input(step)
+    old_text = tool_input.get("old_string")
+    new_text = (
+        tool_input.get("new_string") or tool_input.get("content") or tool_input.get("new_source")
+    )
+    old_comments = _comment_lines(old_text) if isinstance(old_text, str) else frozenset()
+    new_comments = _comment_lines(new_text) if isinstance(new_text, str) else frozenset()
+    return bool(new_comments - old_comments)
+
+
+def find_test_edits_after_failed_run(trace: Trace, config: FindingsConfig) -> list[Finding]:
+    """Flag test-file edits made off the back of a failed test run.
+
+    rule_id: ``"test-edit-after-failed-run"``, severity MEDIUM (silent edit)
+    or INFO (edit adds at least one new comment line — a documented
+    correction, per the test-integrity rule's "documented reason" clause).
+
+    Arming: a ``tool_call`` Bash step whose ``input["command"]`` matches
+    ``config.test_command_pattern`` (case-insensitively) and whose paired
+    env_effect result (the first env_effect step with
+    ``parent_step_id == step.step_id``) has ``tool_result`` text matching
+    ``config.test_failure_pattern`` arms the rule. Failure TEXT is required;
+    the result's ``is_error`` flag alone must not arm (a green run in a
+    non-zero-exit pipeline is not a failing test). A later matching test run
+    whose result does not match the failure pattern (or has no paired
+    result) disarms.
+
+    Clearing: any editor tool_call (``EDITOR_TOOL_NAMES``) whose
+    ``input["file_path"]`` does NOT match ``config.test_file_pattern`` is a
+    production-code edit and disarms — the agent went to fix the code, which
+    is the test-integrity-correct move.
+
+    Firing: while armed, an editor tool_call whose ``file_path`` matches
+    ``config.test_file_pattern`` AND whose basename appears in the armed
+    failure output fires one Finding (the rule stays armed, so every such
+    edit off one failure fires separately). The basename-correspondence
+    requirement is deliberate conservative bias: it suppresses edits to test
+    files unrelated to the failure, at the cost of missing runs whose output
+    names only the test function.
+
+    The edit is "documented" when its new text (``new_string`` /
+    ``content`` / ``new_source``) contains at least one comment line
+    (stripped line starting ``#``, ``//``, ``/*`` or ``*``) not present in
+    ``old_string``. Findings carry
+    ``step_ids=[failed_run_step_id, edit_step_id]`` and evidence including
+    ``file_path``, ``tool``, ``command``, ``failed_run_step_id`` and
+    ``documented``. This rule surfaces candidates for human review — it
+    cannot judge whether a documented reason is honest, only whether one
+    exists.
+    """
+    command_re = re.compile(config.test_command_pattern, re.IGNORECASE)
+    failure_re = re.compile(config.test_failure_pattern)
+    test_file_re = re.compile(config.test_file_pattern)
+
+    result_by_parent: dict[str, Step] = {}
+    for step in trace.steps:
+        if step.action.type == ActionType.ENV_EFFECT and step.parent_step_id:
+            result_by_parent.setdefault(step.parent_step_id, step)
+
+    findings: list[Finding] = []
+    armed: tuple[Step, str] | None = None  # (failed run step, its failure output)
+    for step in trace.steps:
+        name = _tool_name(step)
+        if name == "Bash":
+            command = _command(step) or ""
+            if command_re.search(command):
+                armed = _failed_run_output(step, result_by_parent, failure_re)
+        elif name in EDITOR_TOOL_NAMES:
+            file_path = _file_path(step)
+            if not file_path:
+                continue
+            if not test_file_re.search(file_path):
+                armed = None  # production edit: the test-integrity-correct move
+            elif armed is not None and posixpath.basename(file_path) in armed[1]:
+                findings.append(_test_edit_finding(step, name, file_path, armed[0]))
+    return findings
+
+
+def _failed_run_output(
+    run_step: Step, result_by_parent: dict[str, Step], failure_re: re.Pattern[str]
+) -> tuple[Step, str] | None:
+    """`(run_step, output)` when the run's paired result shows failure text, else None."""
+    result = result_by_parent.get(run_step.step_id)
+    if result is None:
+        return None
+    output = str(result.action.payload.get("tool_result", ""))
+    return (run_step, output) if failure_re.search(output) else None
+
+
+def _test_edit_finding(step: Step, tool: str, file_path: str, run_step: Step) -> Finding:
+    documented = _edit_adds_comment_line(step)
+    return Finding(
+        rule_id="test-edit-after-failed-run",
+        severity=Severity.INFO if documented else Severity.MEDIUM,
+        title="Test file edited after failed test run",
+        step_ids=[run_step.step_id, step.step_id],
+        evidence={
+            "file_path": file_path,
+            "tool": tool,
+            "command": _command(run_step),
+            "failed_run_step_id": run_step.step_id,
+            "documented": documented,
+        },
+        explanation=(
+            f"{tool} edited test file {file_path!r} after that file failed "
+            "a test run, with no production-code edit in between"
+            + (
+                " (the edit adds a comment line, so a documented reason may exist — review it)."
+                if documented
+                else " and without adding any comment line documenting why."
+            )
+        ),
+    )
+
+
 def analyze_trace(trace: Trace, config: FindingsConfig | None = None) -> FindingsReport:
     """Run every findings rule over ``trace`` and assemble a report.
 
     Uses ``config`` if given, else ``FindingsConfig()`` (all defaults). Calls
     each of ``find_writes_outside_roots``, ``find_churn_bursts``,
     ``find_commits_without_verify``, ``find_bash_tripwires``,
-    ``find_error_clusters``, ``find_unobserved_delegations``, and
+    ``find_error_clusters``, ``find_test_edits_after_failed_run``,
+    ``find_unobserved_delegations``, and
     ``find_abandoned_artifacts``, concatenates their findings into
     ``FindingsReport.findings``, and computes
     ``FindingsReport.severity_counts`` as a mapping of each ``Severity``
@@ -632,6 +790,7 @@ def analyze_trace(trace: Trace, config: FindingsConfig | None = None) -> Finding
     findings.extend(find_commits_without_verify(trace, cfg))
     findings.extend(find_bash_tripwires(trace, cfg))
     findings.extend(find_error_clusters(trace, cfg))
+    findings.extend(find_test_edits_after_failed_run(trace, cfg))
     findings.extend(find_unobserved_delegations(trace, cfg))
     findings.extend(find_abandoned_artifacts(trace, cfg))
 
