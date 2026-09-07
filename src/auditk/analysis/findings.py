@@ -623,6 +623,29 @@ def find_abandoned_artifacts(trace: Trace, config: FindingsConfig) -> list[Findi
     return findings
 
 
+_COMMENT_LINE_PREFIXES = ("#", "//", "/*", "*")
+
+
+def _comment_lines(text: str) -> frozenset[str]:
+    return frozenset(
+        stripped
+        for line in text.splitlines()
+        if (stripped := line.strip()).startswith(_COMMENT_LINE_PREFIXES)
+    )
+
+
+def _edit_adds_comment_line(step: Step) -> bool:
+    """Whether an editor step's new text contains a comment line absent from its old text."""
+    tool_input = _tool_input(step)
+    old_text = tool_input.get("old_string")
+    new_text = (
+        tool_input.get("new_string") or tool_input.get("content") or tool_input.get("new_source")
+    )
+    old_comments = _comment_lines(old_text) if isinstance(old_text, str) else frozenset()
+    new_comments = _comment_lines(new_text) if isinstance(new_text, str) else frozenset()
+    return bool(new_comments - old_comments)
+
+
 def find_test_edits_after_failed_run(trace: Trace, config: FindingsConfig) -> list[Finding]:
     """Flag test-file edits made off the back of a failed test run.
 
@@ -663,7 +686,69 @@ def find_test_edits_after_failed_run(trace: Trace, config: FindingsConfig) -> li
     cannot judge whether a documented reason is honest, only whether one
     exists.
     """
-    raise NotImplementedError
+    command_re = re.compile(config.test_command_pattern, re.IGNORECASE)
+    failure_re = re.compile(config.test_failure_pattern)
+    test_file_re = re.compile(config.test_file_pattern)
+
+    result_by_parent: dict[str, Step] = {}
+    for step in trace.steps:
+        if step.action.type == ActionType.ENV_EFFECT and step.parent_step_id:
+            result_by_parent.setdefault(step.parent_step_id, step)
+
+    findings: list[Finding] = []
+    armed: tuple[Step, str] | None = None  # (failed run step, its failure output)
+    for step in trace.steps:
+        name = _tool_name(step)
+        if name == "Bash":
+            command = _command(step) or ""
+            if command_re.search(command):
+                armed = _failed_run_output(step, result_by_parent, failure_re)
+        elif name in EDITOR_TOOL_NAMES:
+            file_path = _file_path(step)
+            if not file_path:
+                continue
+            if not test_file_re.search(file_path):
+                armed = None  # production edit: the test-integrity-correct move
+            elif armed is not None and posixpath.basename(file_path) in armed[1]:
+                findings.append(_test_edit_finding(step, name, file_path, armed[0]))
+    return findings
+
+
+def _failed_run_output(
+    run_step: Step, result_by_parent: dict[str, Step], failure_re: re.Pattern[str]
+) -> tuple[Step, str] | None:
+    """`(run_step, output)` when the run's paired result shows failure text, else None."""
+    result = result_by_parent.get(run_step.step_id)
+    if result is None:
+        return None
+    output = str(result.action.payload.get("tool_result", ""))
+    return (run_step, output) if failure_re.search(output) else None
+
+
+def _test_edit_finding(step: Step, tool: str, file_path: str, run_step: Step) -> Finding:
+    documented = _edit_adds_comment_line(step)
+    return Finding(
+        rule_id="test-edit-after-failed-run",
+        severity=Severity.INFO if documented else Severity.MEDIUM,
+        title="Test file edited after failed test run",
+        step_ids=[run_step.step_id, step.step_id],
+        evidence={
+            "file_path": file_path,
+            "tool": tool,
+            "command": _command(run_step),
+            "failed_run_step_id": run_step.step_id,
+            "documented": documented,
+        },
+        explanation=(
+            f"{tool} edited test file {file_path!r} after that file failed "
+            "a test run, with no production-code edit in between"
+            + (
+                " (the edit adds a comment line, so a documented reason may exist — review it)."
+                if documented
+                else " and without adding any comment line documenting why."
+            )
+        ),
+    )
 
 
 def analyze_trace(trace: Trace, config: FindingsConfig | None = None) -> FindingsReport:
@@ -672,7 +757,8 @@ def analyze_trace(trace: Trace, config: FindingsConfig | None = None) -> Finding
     Uses ``config`` if given, else ``FindingsConfig()`` (all defaults). Calls
     each of ``find_writes_outside_roots``, ``find_churn_bursts``,
     ``find_commits_without_verify``, ``find_bash_tripwires``,
-    ``find_error_clusters``, ``find_unobserved_delegations``, and
+    ``find_error_clusters``, ``find_test_edits_after_failed_run``,
+    ``find_unobserved_delegations``, and
     ``find_abandoned_artifacts``, concatenates their findings into
     ``FindingsReport.findings``, and computes
     ``FindingsReport.severity_counts`` as a mapping of each ``Severity``
@@ -704,6 +790,7 @@ def analyze_trace(trace: Trace, config: FindingsConfig | None = None) -> Finding
     findings.extend(find_commits_without_verify(trace, cfg))
     findings.extend(find_bash_tripwires(trace, cfg))
     findings.extend(find_error_clusters(trace, cfg))
+    findings.extend(find_test_edits_after_failed_run(trace, cfg))
     findings.extend(find_unobserved_delegations(trace, cfg))
     findings.extend(find_abandoned_artifacts(trace, cfg))
 
