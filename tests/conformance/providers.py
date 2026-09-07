@@ -460,9 +460,6 @@ _HERMES = AdapterConformanceFixtures(
 )
 
 
-PROVIDERS: list[AdapterConformanceFixtures] = [_CLAUDE_CODE, _LANGGRAPH, _GENERIC_OTEL, _HERMES]
-
-
 # --- pi ------------------------------------------------------------------
 # Native format: a list of parsed JSONL line dicts from a pi v3 session
 # file -- header first, then entries (confirmed against a real first-party
@@ -618,4 +615,10 @@ _PI = AdapterConformanceFixtures(
     health=_pi_health_fixture(),
 )
 
-PROVIDERS.append(_PI)
+PROVIDERS: list[AdapterConformanceFixtures] = [
+    _CLAUDE_CODE,
+    _LANGGRAPH,
+    _GENERIC_OTEL,
+    _HERMES,
+    _PI,
+]

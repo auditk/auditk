@@ -6,9 +6,10 @@ an adapter must map, what it must never invent, how redaction pass-through
 works, how to register an adapter, and how to check your work with the
 conformance kit.
 
-It is written against the four adapters shipped today —
+It is written against the five adapters shipped today —
 `src/auditk/adapters/claude_code.py`, `src/auditk/adapters/langgraph.py`,
-`src/auditk/adapters/generic_otel.py`, `src/auditk/adapters/hermes.py` —
+`src/auditk/adapters/generic_otel.py`, `src/auditk/adapters/hermes.py`,
+`src/auditk/adapters/pi.py` —
 and describes their actual, current behaviour, not an aspirational one.
 An earlier version of this page called out two real contract gaps
 (redaction pass-through and the health canary both being Claude-Code-only)
@@ -220,6 +221,7 @@ original_value))`, or `0` for `None`):
 | langgraph | `TOOL_CALL`'s `writes` | `redaction.py:redact_trace`, applied as a post-ingest pass |
 | generic-otel | `TOOL_CALL`'s `input`/`output` | `redaction.py:redact_trace`, applied as a post-ingest pass |
 | hermes | `TOOL_CALL`'s `input`, `ENV_EFFECT`'s `tool_result` | `redaction.py:redact_trace`, applied as a post-ingest pass |
+| pi | `TOOL_CALL`'s `input`/`output` (`output` exists only on `bashExecution` steps), `ENV_EFFECT`'s `tool_result` | `redaction.py:redact_trace`, applied as a post-ingest pass |
 
 In every case `UTTERANCE` (narration / the LLM's own response) is
 deliberately left untouched — a model's stated intent is not the
@@ -254,23 +256,25 @@ format, simply don't add it to `_FACTORIES`: the CLI will refuse loudly
 on `--strip-payloads` for it rather than silently proceeding as if the
 flag had no effect.
 
-## A gated stub: `pi`
+## `pi` — a stub that graduated
 
-`src/auditk/adapters/pi.py` registers a `pi` adapter name, but it is not a
-real adapter — every `ingest()` call refuses loudly with
-`PiAdapterGatedError` ("Pi adapter is gated on sample traces supplied under
-explicit permission; see docs/pi-format-notes.md"). Pi (a prospective
-external tester's coding-agent harness) has publicly documented session
-format docs, but no real session trace has been read yet, and per this
-page's own discipline — every shipped adapter's format was "discovered by
-reading the writer source... not guessed from data alone" — public docs
-alone are not enough to write a parser against. See
-`docs/pi-format-notes.md` for what is provisionally known and the exact
-list of things a real sample needs to confirm before this stub becomes a
-real adapter. `pi` is deliberately excluded from the conformance kit's
-`PROVIDERS` list (its `TestMinimalValidIngest` case assumes success, which
-a loud-refusing stub never gives) — see `tests/conformance/providers.py`'s
-`REFUSING_PROVIDERS` for its own, separate always-refuses assertions.
+`src/auditk/adapters/pi.py` shipped for months as a deliberately gated
+stub (every `ingest()` refused loudly, pending real sample traces). It
+became a real adapter once the evidence gate cleared: a first-party live
+corpus written by pi's own released writer (`tests/fixtures/pi/`, real
+bytes, path-anonymised only) plus a read of that writer's compiled
+declarations — the same discipline every other adapter met. The confirmed
+grammar and the entry-type census live in `docs/pi-format-notes.md`. Two
+things worth knowing that are unique to it: pi's integration fixtures are
+REAL session files (every other adapter's are synthetic by convention),
+and the adapter refuses loudly, with a version message, on the unreleased
+v4 storage format documented in the format notes — that refusal is the
+upgrade signal, not a bug. Its fork concept (`parentSession` header path,
+parent entries copied verbatim into a self-contained file) means no
+transcript stitching exists or is permitted; vanilla pi also has no
+plan/todo tool, so its health declaration sets
+`plan_anchor_supported=False` with a reason rather than an empty
+pretend-vocabulary.
 
 ## Registering an adapter
 
@@ -286,6 +290,7 @@ _REGISTRY: dict[str, TraceAdapter] = {
     "langgraph": LangGraphTraceAdapter(),
     "claude-code": ClaudeCodeTraceAdapter(),
     "hermes": HermesTraceAdapter(),
+    "pi": PiTraceAdapter(),
 }
 ```
 
