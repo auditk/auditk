@@ -55,7 +55,7 @@ The core pipeline runs end-to-end: an agent session becomes a signed, verifiable
 - Drift score: scalar, decomposable, session-length invariant
 - Attestation: Ed25519 signing, canonical JSON, portable evidence pack
 - CLI: `key-gen`, `ingest`, `report`, `attest`, `replay`, `diff`, `verify`, `rules init`
-- Single-session post-mortem reporting: `auditk report` renders a deterministic, model-free structural post-mortem of a session (markdown or JSON)
+- Single-session post-mortem reporting: `auditk report` renders a deterministic, model-free structural post-mortem of a session (markdown, JSON, or a self-contained HTML document)
 - Structural findings engine: rule-driven detection over a session — scope-escape beyond allowed write roots, churn bursts, commit-without-tests, error clusters, unobserved delegation, abandoned artifacts, and command tripwires (destructive `rm`, force-push, migrations, `.env` writes) — with no model calls
 - Ruleset cascade + policy context: layered rulesets (shipped default → per-user → per-project `.auditk/rules.yaml` → `$AUDITK_RULES`), automatic git-root discovery, CLAUDE.md policy-context surfacing, and `auditk rules init` scaffolding
 - Cross-model scoring protocol: one fixed instrument applied identically across 4 model families — common scale by construction (not per-model calibration; no cross-model detection claim, benchmark under corrected re-run)
@@ -98,7 +98,7 @@ auditk verify evidence-pack.json --public-key signing_key.ed25519.pub
 Or produce a lightweight, model-free post-mortem of a single session — deterministic structural findings, no attestation or model calls:
 
 ```bash
-# Post-mortem report for a session (markdown to stdout; --format json for JSON)
+# Post-mortem report for a session (markdown to stdout; --format json / --format html)
 auditk report --adapter claude-code \
   --in ~/.claude/projects/<path>/<session>.jsonl
 
