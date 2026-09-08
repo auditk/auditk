@@ -39,8 +39,9 @@ import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
+from auditk.adapters.provenance import ProvenanceDeclaration, TraceProvenance
 from auditk.schema import (
     Action,
     ActionType,
@@ -642,8 +643,27 @@ def _parse_ts(raw: Any) -> datetime:
         return datetime.now(UTC)
 
 
+# Trace-provenance declaration (follow-up to PR #15's forged-walk demo, see
+# `auditk.adapters.provenance` module docstring): Claude Code's own runtime
+# harness process -- not the agent being audited -- writes the session
+# JSONL transcript this adapter reads. The agent has no write access to
+# that file, so every record in it is scheduler-derived by construction.
+CLAUDE_CODE_PROVENANCE_DECLARATION = ProvenanceDeclaration(
+    name="claude-code",
+    provenance=TraceProvenance.SCHEDULER_DERIVED,
+    reason=(
+        "Claude Code's own runtime harness writes the session JSONL "
+        "transcript this adapter reads, independent of anything the agent "
+        "process itself chooses to report -- the agent has no write access "
+        "to its own transcript file."
+    ),
+)
+
+
 class ClaudeCodeTraceAdapter:
     """Structural TraceAdapter for Claude Code session JSONL event lists."""
+
+    provenance_declaration: ClassVar[ProvenanceDeclaration] = CLAUDE_CODE_PROVENANCE_DECLARATION
 
     def __init__(self, strip_payloads: bool = False) -> None:
         self.strip_payloads = strip_payloads

@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, ClassVar
 
 from auditk.adapters.health import HealthDeclaration
+from auditk.adapters.provenance import ProvenanceDeclaration, TraceProvenance
 from auditk.adapters.redaction import ContentKeysByActionType, redact_trace
 from auditk.schema import (
     Action,
@@ -240,6 +241,25 @@ GENERIC_OTEL_HEALTH_DECLARATION = HealthDeclaration(
 )
 
 
+# Trace-provenance declaration (follow-up to PR #15's forged-walk demo, see
+# `auditk.adapters.provenance` module docstring): an OpenInference span's
+# `input.value`/`output.value` may have been emitted by the agent
+# framework's own instrumentation (scheduler-derived) or by a node's own
+# custom span (self-reported) -- OpenInference's wire format carries no
+# emitter-identity marker, and `_span_to_step`/`_infer_action` below read
+# only a span's kind/name/attributes, never who exported it.
+GENERIC_OTEL_PROVENANCE_DECLARATION = ProvenanceDeclaration(
+    name="generic-otel",
+    provenance=TraceProvenance.UNKNOWN,
+    reason=(
+        "An OpenInference span's input/output attributes may come from the "
+        "agent framework's own instrumentation or from a node's own custom "
+        "span -- the wire format carries no marker for which, and this "
+        "adapter has no way to tell who emitted a given span."
+    ),
+)
+
+
 class OtelTraceAdapter:
     """Structural implementation of TraceAdapter for OTel/OpenInference spans.
 
@@ -248,6 +268,8 @@ class OtelTraceAdapter:
     (`auditk.adapters.redaction.redact_trace`) -- the generic-otel half of
     closing P1b's gap 1 (redaction pass-through was Claude-Code-only).
     """
+
+    provenance_declaration: ClassVar[ProvenanceDeclaration] = GENERIC_OTEL_PROVENANCE_DECLARATION
 
     def __init__(self, strip_payloads: bool = False) -> None:
         self.strip_payloads = strip_payloads

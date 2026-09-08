@@ -72,9 +72,10 @@ every other shipped adapter follows.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, ClassVar
 
 from auditk.adapters.health import HealthDeclaration
+from auditk.adapters.provenance import ProvenanceDeclaration, TraceProvenance
 from auditk.adapters.redaction import ContentKeysByActionType, redact_trace
 from auditk.schema import (
     Action,
@@ -477,6 +478,24 @@ PI_HEALTH_DECLARATION = HealthDeclaration(
 )
 
 
+# Trace-provenance declaration (follow-up to PR #15's forged-walk demo, see
+# `auditk.adapters.provenance` module docstring): pi's own `SessionManager`
+# (see this module's docstring above) writes every entry from inside the
+# same process the agent itself runs in, with no per-entry marker
+# separating harness-driven writes from the agent's own reported content --
+# the same shape as Hermes, for the same reason.
+PI_PROVENANCE_DECLARATION = ProvenanceDeclaration(
+    name="pi",
+    provenance=TraceProvenance.UNKNOWN,
+    reason=(
+        "pi's SessionManager writes every entry from inside the same "
+        "process the agent itself runs in, with no per-entry marker "
+        "distinguishing harness bookkeeping from the agent's own reported "
+        "content, so this adapter cannot tell which it was fed."
+    ),
+)
+
+
 class PiTraceAdapter:
     """Structural TraceAdapter for pi v3 session-file line lists.
 
@@ -484,6 +503,8 @@ class PiTraceAdapter:
     content-bearing payload keys via the shared post-ingest redaction pass
     (``auditk.adapters.redaction.redact_trace`` -- see module docstring).
     """
+
+    provenance_declaration: ClassVar[ProvenanceDeclaration] = PI_PROVENANCE_DECLARATION
 
     def __init__(self, strip_payloads: bool = False) -> None:
         self.strip_payloads = strip_payloads

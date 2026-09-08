@@ -268,3 +268,21 @@ class TestDoctorSubcommand:
         )
 
         assert "ok" in result.output.lower() or "healthy" in result.output.lower()
+
+    def test_doctor_prints_trace_provenance_line(self, tmp_path: Path) -> None:
+        """Trace-provenance follow-up to PR #15's forged-walk demo (see
+        `auditk.adapters.provenance`): `doctor` only ever walks a Claude
+        Code on-disk corpus, so it prints that adapter's own declared
+        classification -- `scheduler-derived`, since Claude Code's own
+        runtime harness writes the session transcript this corpus is built
+        from, not the agent itself."""
+        root = tmp_path / "projects"
+        tasks_root = tmp_path / "tasks"
+        _build_corpus(root, 20, anchor_tool="TaskCreate")
+
+        result = runner.invoke(
+            app, ["doctor", "--root", str(root), "--tasks-root", str(tasks_root)]
+        )
+
+        assert "provenance" in result.output.lower()
+        assert "scheduler-derived" in result.output.lower()

@@ -9,9 +9,10 @@ Checkpoint dicts must follow the serialised CheckpointTuple shape (not live obje
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, ClassVar
 
 from auditk.adapters.health import HealthDeclaration
+from auditk.adapters.provenance import ProvenanceDeclaration, TraceProvenance
 from auditk.adapters.redaction import ContentKeysByActionType, redact_trace
 from auditk.schema import (
     Action,
@@ -185,6 +186,30 @@ LANGGRAPH_HEALTH_DECLARATION = HealthDeclaration(
 )
 
 
+# Trace-provenance declaration (follow-up to PR #15's forged-walk demo, see
+# `auditk.adapters.provenance` module docstring): a checkpoint's
+# `metadata.writes` can hold either a state-key value a graph NODE set on
+# itself (self-reported -- forgeable the same way `examples/forged-walk`'s
+# misbehaving node is) or a value written by LangGraph's own
+# stream/checkpointer machinery as it executes a step (scheduler-derived).
+# `_classify_action`/`ingest_checkpoints` read only the SHAPE of a write,
+# never who produced it, so this adapter genuinely cannot tell which it was
+# fed -- declaring either extreme would be exactly the kind of guess
+# docs/adapters.md's "What an adapter must NOT invent" section forbids.
+LANGGRAPH_PROVENANCE_DECLARATION = ProvenanceDeclaration(
+    name="langgraph",
+    provenance=TraceProvenance.UNKNOWN,
+    reason=(
+        "A LangGraph checkpoint's metadata.writes can hold a state-key "
+        "value a node self-reported about its own output, or a value "
+        "written by LangGraph's own stream/checkpointer machinery -- the "
+        "serialised CheckpointTuple shape this adapter reads carries no "
+        "marker distinguishing the two, so the adapter cannot know which "
+        "it was fed without more evidence than the record stream provides."
+    ),
+)
+
+
 class LangGraphTraceAdapter:
     """Adapter class wrapping ingest_checkpoints for protocol compliance.
 
@@ -193,6 +218,8 @@ class LangGraphTraceAdapter:
     (`auditk.adapters.redaction.redact_trace`) -- the LangGraph half of
     closing P1b's gap 1 (redaction pass-through was Claude-Code-only).
     """
+
+    provenance_declaration: ClassVar[ProvenanceDeclaration] = LANGGRAPH_PROVENANCE_DECLARATION
 
     def __init__(self, strip_payloads: bool = False) -> None:
         self.strip_payloads = strip_payloads

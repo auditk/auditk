@@ -391,6 +391,65 @@ Code's `TaskCreate`. `pairing_supported=False` is a documented, reasoned
 decision, not an oversight — exactly the langgraph/generic-otel pattern
 above.
 
+## Trace provenance declaration
+
+`examples/forged-walk` demonstrates that a self-reported trail — state an
+agent, or one of its own nodes, writes about its own actions — is forgeable
+by that same node. A trail's trustworthiness therefore depends on *where in
+the pipeline* it was captured, not just on what it says. `adapters/
+provenance.py` (follow-up to PR #15) applies the same
+small-pure-declaration-plus-registry-surfacing pattern as the health canary
+above to this one further question every adapter must answer: was this
+trace's data written by the runtime/scheduler that ran the agent, or by the
+agent (or one of its own nodes) self-reporting on itself?
+
+Three classifications (`TraceProvenance`):
+
+- **`scheduler-derived`** — the runtime or checkpointer that actually
+  executed the agent wrote this record, independent of anything the agent
+  itself chose to say.
+- **`self-reported`** — the agent, or one of its own nodes, wrote the
+  record about its own actions — exactly the shape `examples/forged-walk`
+  shows is forgeable.
+- **`unknown`** — the conservative default. Declared, not merely absent: an
+  adapter whose native format could carry either kind of record, or whose
+  ingestion code cannot itself tell which kind it was fed, says so
+  explicitly with a non-empty `reason` string.
+
+Each adapter module owns a `<NAME>_PROVENANCE_DECLARATION`
+`ProvenanceDeclaration` constant, exposed as `provenance_declaration` on the
+adapter class itself (a required `TraceAdapter` protocol member, checked
+statically by `mypy` the same way `ingest()` is), and surfaced generically
+via `adapters/registry.get_provenance_declaration(name)`:
+
+| Adapter | Classification | Why |
+|---|---|---|
+| claude-code | `scheduler-derived` | Claude Code's own runtime harness writes the session JSONL transcript this adapter reads; the agent process itself has no write access to it. |
+| langgraph | `unknown` | A checkpoint's `metadata.writes` can hold either a state-key value a graph node self-reported about its own output, or a value LangGraph's own stream/checkpointer machinery wrote as it executed a step — the serialised `CheckpointTuple` shape carries no marker distinguishing the two. |
+| generic-otel | `unknown` | An OpenInference span's `input.value`/`output.value` may have been emitted by the agent framework's own instrumentation or by a node's own custom span; the wire format carries no emitter-identity marker. |
+| hermes | `unknown` | Hermes' `messages`-table rows are written by the same runtime process for both the harness's own bookkeeping and whatever the agent reports about a tool call, with no per-row marker distinguishing the two. |
+| pi | `unknown` | pi's `SessionManager` writes every entry from inside the same process the agent itself runs in, with no per-entry marker separating harness-driven writes from the agent's own reported content. |
+
+None of the four `unknown` classifications is a placeholder waiting to be
+upgraded casually — each is grounded in a specific read of that adapter's
+own ingestion code (see `provenance.py`'s module docstring for the full
+reasoning), and upgrading one to `scheduler-derived`/`self-reported` would
+require the native format to grow an actual emitter-identity marker, not
+just closer reading of the same records.
+
+Unlike the health canary's per-sub-check opt-out, there is no legitimate
+case for an adapter to have *no* `provenance_declaration` at all —
+`unknown` is always available and always honest. `tests/conformance/
+test_conformance.py::TestProvenanceDeclaration` is accordingly a hard
+assertion for every registered adapter, never an `xfail` and never a
+`skip`.
+
+`auditk doctor` prints the classification (and its reason) for the Claude
+Code corpus it walks, since that is the only adapter `doctor` ever runs
+against; this is currently `doctor`-only — the `report` command's own
+output does not yet carry a provenance line, and that gap is left for a
+follow-up rather than folded in here.
+
 ## Conformance
 
 `tests/conformance/` is a parametrised pytest suite that runs the same
@@ -424,6 +483,11 @@ for `claude-code`, `langgraph`, `generic-otel`, and `hermes`.
 | redaction pass-through | pass | pass | pass | pass |
 | health pairing invariants (id-matched + id-less) | pass | skip (no id-pairing concept) | skip (no id-pairing concept) | pass |
 | health unknown-record-type-share | pass | pass | pass | pass |
+| provenance declaration present (unknown allowed, absence is not) | pass | pass | pass | pass |
+
+(`pi` also passes every case above — see "Trace provenance declaration"
+and "`pi` — a stub that graduated" for why this table predates it and
+still only names the original four.)
 
 If you're adding a fifth adapter: get every non-`xfail`/non-`skip` case
 above passing before calling it done. Reach for `pytest.xfail` only when

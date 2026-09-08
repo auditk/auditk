@@ -2,13 +2,29 @@
 
 from collections.abc import Callable
 
-from auditk.adapters.claude_code import ClaudeCodeTraceAdapter
-from auditk.adapters.generic_otel import GENERIC_OTEL_HEALTH_DECLARATION, OtelTraceAdapter
+from auditk.adapters.claude_code import (
+    CLAUDE_CODE_PROVENANCE_DECLARATION,
+    ClaudeCodeTraceAdapter,
+)
+from auditk.adapters.generic_otel import (
+    GENERIC_OTEL_HEALTH_DECLARATION,
+    GENERIC_OTEL_PROVENANCE_DECLARATION,
+    OtelTraceAdapter,
+)
 from auditk.adapters.health import CLAUDE_CODE_HEALTH_DECLARATION, HealthDeclaration
-from auditk.adapters.hermes import HERMES_HEALTH_DECLARATION, HermesTraceAdapter
-from auditk.adapters.langgraph import LANGGRAPH_HEALTH_DECLARATION, LangGraphTraceAdapter
-from auditk.adapters.pi import PI_HEALTH_DECLARATION, PiTraceAdapter
+from auditk.adapters.hermes import (
+    HERMES_HEALTH_DECLARATION,
+    HERMES_PROVENANCE_DECLARATION,
+    HermesTraceAdapter,
+)
+from auditk.adapters.langgraph import (
+    LANGGRAPH_HEALTH_DECLARATION,
+    LANGGRAPH_PROVENANCE_DECLARATION,
+    LangGraphTraceAdapter,
+)
+from auditk.adapters.pi import PI_HEALTH_DECLARATION, PI_PROVENANCE_DECLARATION, PiTraceAdapter
 from auditk.adapters.protocols import TraceAdapter
+from auditk.adapters.provenance import ProvenanceDeclaration
 
 _REGISTRY: dict[str, TraceAdapter] = {
     "generic-otel": OtelTraceAdapter(),
@@ -64,6 +80,19 @@ _HEALTH_DECLARATIONS: dict[str, HealthDeclaration] = {
     "pi": PI_HEALTH_DECLARATION,
 }
 
+# Per-adapter trace-provenance declaration (follow-up to PR #15's
+# forged-walk demo) -- see `auditk.adapters.provenance.ProvenanceDeclaration`.
+# Unlike `_HEALTH_DECLARATIONS`, every registered adapter has an entry here:
+# `UNKNOWN` is always a legitimate, honest classification, so there is no
+# "hasn't been written yet" case the way there is for health/redaction.
+_PROVENANCE_DECLARATIONS: dict[str, ProvenanceDeclaration] = {
+    "generic-otel": GENERIC_OTEL_PROVENANCE_DECLARATION,
+    "langgraph": LANGGRAPH_PROVENANCE_DECLARATION,
+    "claude-code": CLAUDE_CODE_PROVENANCE_DECLARATION,
+    "hermes": HERMES_PROVENANCE_DECLARATION,
+    "pi": PI_PROVENANCE_DECLARATION,
+}
+
 
 def get_adapter(name: str, *, strip_payloads: bool = False) -> TraceAdapter:
     if name not in _REGISTRY:
@@ -90,3 +119,15 @@ def get_health_declaration(name: str) -> HealthDeclaration | None:
     all" case `cli.py` reports as "no health declaration".
     """
     return _HEALTH_DECLARATIONS.get(name)
+
+
+def get_provenance_declaration(name: str) -> ProvenanceDeclaration | None:
+    """The adapter's `ProvenanceDeclaration`, or `None` if `name` itself is
+    unregistered (see `get_adapter`).
+
+    Unlike `get_health_declaration`, `None` here never means "this adapter
+    hasn't decided" -- `UNKNOWN` is always a legitimate, declared value, so
+    every name in `_REGISTRY` also has an entry in `_PROVENANCE_DECLARATIONS`.
+    `None` means only "no such adapter name".
+    """
+    return _PROVENANCE_DECLARATIONS.get(name)

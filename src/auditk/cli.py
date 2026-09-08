@@ -417,6 +417,7 @@ def doctor(
     Exits non-zero if the corpus-level invariant (or any per-session check)
     breaches.
     """
+    from auditk.adapters.claude_code import CLAUDE_CODE_PROVENANCE_DECLARATION
     from auditk.adapters.health import (
         CLAUDE_CODE_HEALTH_DECLARATION,
         PLAN_ANCHOR_TOOL_NAMES,
@@ -440,6 +441,16 @@ def doctor(
         typer.echo(f"  {tool:<12} {anchor_histogram.get(tool, 0)}")
     sessions_with_plan_store = sum(1 for s in sessions if s.has_plan_store)
     typer.echo(f"  sessions with persisted plan store: {sessions_with_plan_store}")
+    typer.echo("")
+    # Trace-provenance declaration (follow-up to PR #15's forged-walk demo,
+    # see auditk.adapters.provenance): doctor only ever walks a Claude Code
+    # corpus, so this is always that adapter's own declaration -- printed
+    # explicitly rather than assumed, so a reader of `doctor`'s output sees
+    # the trust basis of the corpus it just checked, not just its health.
+    typer.echo(
+        f"Trace provenance: {CLAUDE_CODE_PROVENANCE_DECLARATION.provenance.value} "
+        f"-- {CLAUDE_CODE_PROVENANCE_DECLARATION.reason}"
+    )
     typer.echo("")
 
     if health.ok:
