@@ -29,7 +29,8 @@ _NLI_INSTALL_HINT = (
 
 _JUDGE_INSTALL_HINT = (
     "The llm-judge@0.3 scorer requires the [judge] extra. Install with: pip install auditk[judge]. "
-    "Set RUN_JUDGE_MODEL=1 and ensure FIREWORKS_API_KEY is set."
+    "Set RUN_JUDGE_MODEL=1 and either FIREWORKS_API_KEY, or AUDITK_JUDGE_BASE_URL (+ "
+    "AUDITK_JUDGE_MODEL) for a self-hosted judge of a different model family than the agent."
 )
 
 
