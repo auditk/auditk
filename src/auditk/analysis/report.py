@@ -27,6 +27,7 @@ The three moving pieces:
 
 from __future__ import annotations
 
+import html as html_module
 import posixpath
 import re
 from datetime import datetime
@@ -535,3 +536,182 @@ def render_markdown(report: ReportModel) -> str:
         "",
     ]
     return "\n".join(sections)
+
+
+# --- render_html ---------------------------------------------------------
+# Mirrors render_markdown section-for-section as one SELF-CONTAINED HTML
+# document: inline CSS only, no scripts, no external assets (so the file
+# travels over email the way an evidence pack does), and every
+# session-derived string HTML-escaped — session content is untrusted input
+# to this renderer, exactly as it is to the scorers.
+
+_HTML_STYLE = """
+:root { color-scheme: light dark; }
+body { font: 15px/1.55 system-ui, sans-serif; max-width: 60rem;
+       margin: 2rem auto; padding: 0 1rem; }
+h1 { font-size: 1.5rem; border-bottom: 2px solid #8884; padding-bottom: .3rem; }
+h2 { font-size: 1.15rem; margin-top: 2rem; border-bottom: 1px solid #8883;
+     padding-bottom: .2rem; }
+h3 { font-size: 1rem; }
+table { border-collapse: collapse; }
+th, td { text-align: left; padding: .25rem .75rem; border: 1px solid #8884; }
+code { font-size: .9em; background: #8882; padding: .05rem .3rem;
+       border-radius: 3px; }
+ul { padding-left: 1.4rem; }
+.sev { font-weight: 700; padding: .05rem .45rem; border-radius: 3px;
+       font-size: .8em; }
+.sev-high { background: #c62828; color: #fff; }
+.sev-medium { background: #ef6c00; color: #fff; }
+.sev-low { background: #f9a825; color: #000; }
+.sev-info { background: #8886; }
+.muted { opacity: .7; }
+"""
+
+
+def _esc(value: Any) -> str:
+    """Escape one session-derived value for interpolation into HTML."""
+    return html_module.escape(str(value), quote=True)
+
+
+def _html_header_table(header: dict[str, Any]) -> list[str]:
+    rows = [
+        ("Session ID", header.get("sessionId")),
+        ("Project (cwd)", header.get("cwd")),
+        ("Git branch", header.get("gitBranch")),
+        ("Version", header.get("version")),
+        ("Duration (s)", header.get("duration_seconds")),
+        ("Steps", header.get("step_count")),
+        ("Tool calls", header.get("tool_call_count")),
+        ("User turns", header.get("user_turn_count")),
+    ]
+    out = ["<table><tbody>"]
+    for label, value in rows:
+        shown = _esc(value) if value is not None else '<span class="muted">(unknown)</span>'
+        out.append(f"<tr><th>{_esc(label)}</th><td>{shown}</td></tr>")
+    out.append("</tbody></table>")
+    return out
+
+
+def _html_policy_context(policy_context: list[PolicyDoc]) -> list[str]:
+    if not policy_context:
+        return [
+            '<p class="muted">No CLAUDE.md policy files were discovered '
+            "for this session's working directory.</p>"
+        ]
+    out = ["<ul>"]
+    for doc in policy_context:
+        title = doc.title if doc.title else "(no heading)"
+        out.append(
+            f"<li><strong>{_esc(doc.scope)}</strong> <code>{_esc(doc.path)}</code>"
+            f" — {_esc(title)}</li>"
+        )
+    out.append("</ul>")
+    return out
+
+
+def _html_timeline(timeline: list[TimelineEntry]) -> list[str]:
+    if not timeline:
+        return ['<p class="muted">No notable events.</p>']
+    out = ["<ul>"]
+    for entry in timeline:
+        ts = entry.timestamp.isoformat() if entry.timestamp else "?"
+        out.append(
+            f"<li><code>{_esc(entry.step_id)}</code> <strong>{_esc(entry.kind)}</strong>"
+            f' <span class="muted">({_esc(ts)})</span> — {_esc(entry.summary)}</li>'
+        )
+    out.append("</ul>")
+    return out
+
+
+def _html_findings(findings: FindingsReport) -> list[str]:
+    total = len(findings.findings)
+    counts = ", ".join(
+        f"{findings.severity_counts.get(sev.value, 0)} {sev.value}" for sev in _SEVERITY_ORDER
+    )
+    out = [f"<p>{total} finding(s): {_esc(counts)}.</p>"]
+
+    by_severity: dict[Severity, list[Finding]] = {sev: [] for sev in _SEVERITY_ORDER}
+    for finding in findings.findings:
+        by_severity[finding.severity].append(finding)
+
+    for sev in _SEVERITY_ORDER:
+        group = by_severity[sev]
+        if not group:
+            continue
+        label = sev.value.upper()
+        out.append(f'<h3><span class="sev sev-{_esc(sev.value)}">{_esc(label)}</span></h3>')
+        out.append("<ul>")
+        for finding in group:
+            steps_str = ", ".join(finding.step_ids)
+            evidence = _format_evidence(finding.evidence)
+            out.append(
+                f"<li><strong>{_esc(finding.rule_id)}</strong> — {_esc(finding.title)}"
+                f' <span class="muted">(steps: {_esc(steps_str)})</span>'
+                f" — <code>{_esc(evidence)}</code></li>"
+            )
+        out.append("</ul>")
+
+    if total == 0:
+        out.append('<p class="muted">No findings.</p>')
+    return out
+
+
+def _html_compliance(turns: list[TurnCompliance]) -> list[str]:
+    if not turns:
+        return ['<p class="muted">No user turns recorded.</p>']
+    out = []
+    for turn in turns:
+        out.append(f"<h3>Turn: &quot;{_esc(_truncate(turn.user_text))}&quot;</h3>")
+        if not turn.followed_by:
+            out.append('<p class="muted">No tool calls followed this turn.</p>')
+        else:
+            out.append("<ul>")
+            for tool, count in sorted(turn.followed_by.items()):
+                out.append(f"<li>{_esc(tool)}: {count}</li>")
+            out.append("</ul>")
+    return out
+
+
+def _html_not_checked(not_checked: dict[str, str]) -> list[str]:
+    if not not_checked:
+        return ["<p>All rules ran.</p>"]
+    out = ["<ul>"]
+    for rule_id, reason in sorted(not_checked.items()):
+        out.append(f"<li><strong>{_esc(rule_id)}</strong>: {_esc(reason)}</li>")
+    out.append("</ul>")
+    return out
+
+
+def render_html(report: ReportModel) -> str:
+    """Render `report` as one deterministic, self-contained HTML document.
+
+    Section order mirrors ``render_markdown``: Summary, Policy context,
+    Timeline, Findings, Instruction compliance, Not checked. Same purity
+    guarantee — no wall-clock timestamps or randomness — so identical
+    ``ReportModel`` inputs always produce identical documents. No scripts,
+    no external assets; all session-derived text is escaped.
+    """
+    session_id = report.header.get("sessionId") or "unknown session"
+    body: list[str] = [
+        f"<h1>Session post-mortem — <code>{_esc(session_id)}</code></h1>",
+        "<h2>Summary</h2>",
+        *_html_header_table(report.header),
+        "<h2>Policy context</h2>",
+        *_html_policy_context(report.policy_context),
+        "<h2>Timeline</h2>",
+        *_html_timeline(report.timeline),
+        "<h2>Findings</h2>",
+        *_html_findings(report.findings),
+        "<h2>Instruction compliance</h2>",
+        *_html_compliance(report.turns),
+        "<h2>Not checked</h2>",
+        *_html_not_checked(report.not_checked),
+    ]
+    return (
+        "<!doctype html>\n"
+        '<html lang="en">\n<head>\n<meta charset="utf-8">\n'
+        f"<title>auditk post-mortem — {_esc(session_id)}</title>\n"
+        f"<style>{_HTML_STYLE}</style>\n</head>\n<body>\n"
+        + "\n".join(body)
+        + "\n</body>\n</html>\n"
+    )

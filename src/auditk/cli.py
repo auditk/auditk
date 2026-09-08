@@ -220,7 +220,7 @@ def report(
     in_file: str = typer.Option(..., "--in", help="Session file to load (.jsonl or .json)."),
     out: str | None = typer.Option(None, help="Output file path (default: stdout)."),
     output_format: str = typer.Option(
-        "md", "--format", help="Output format: md (markdown, default) or json."
+        "md", "--format", help="Output format: md (markdown, default), json, or html."
     ),
     root: str = typer.Option(
         "",
@@ -273,11 +273,11 @@ def report(
     from auditk.adapters.health import SessionHealthInput, check_adapter_health
     from auditk.analysis.findings import analyze_trace
     from auditk.analysis.policy_context import discover_policy_context
-    from auditk.analysis.report import build_report, render_markdown
+    from auditk.analysis.report import build_report, render_html, render_markdown
     from auditk.analysis.ruleset import RulesetError, load_ruleset
 
-    if output_format not in ("md", "json"):
-        typer.echo(f"Error: Unknown format {output_format!r}. Choose from: md, json")
+    if output_format not in ("md", "json", "html"):
+        typer.echo(f"Error: Unknown format {output_format!r}. Choose from: md, json, html")
         raise typer.Exit(1)
 
     if plan_tasks and adapter != "claude-code":
@@ -335,11 +335,12 @@ def report(
     findings = analyze_trace(trace, config)
     report_model = build_report(trace, findings, config=config, policy_context=policy_context)
 
-    content = (
-        report_model.model_dump_json(indent=2)
-        if output_format == "json"
-        else render_markdown(report_model)
-    )
+    renderers = {
+        "json": lambda m: m.model_dump_json(indent=2),
+        "html": render_html,
+        "md": render_markdown,
+    }
+    content = renderers[output_format](report_model)
 
     if out:
         Path(out).write_text(content)
