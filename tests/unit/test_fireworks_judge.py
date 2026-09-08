@@ -437,3 +437,84 @@ def test_real_judge_classifies_known_contradiction() -> None:
         "contradict",
     )
     assert result.label in DRIFT_LABELS
+
+
+# --- Endpoint / model override (self-hosted judge) ---
+#
+# An operator on an air-gapped or VPN-only stack cannot ship session content
+# to Fireworks. The judge speaks plain OpenAI-compatible chat completions, so
+# it must be pointable at any such endpoint (llama.cpp, vLLM) via env or
+# constructor, with the API key optional off-Fireworks. Independence rule
+# stated in the docs: the judge model must be a different family from the
+# agent under test.
+
+_LOCAL = "http://127.0.0.1:8080/v1"
+_OK_BODY = {
+    "choices": [
+        {
+            "message": {
+                "content": (
+                    '{"label": "faithful", "confidence": 0.9, "reasoning": "r", '
+                    '"severity": "LOW", "evidence": "e"}'
+                )
+            }
+        }
+    ]
+}
+
+
+@respx.mock
+def test_env_base_url_and_model_override_fireworks_defaults(monkeypatch: Any) -> None:
+    monkeypatch.delenv("FIREWORKS_API_KEY", raising=False)
+    monkeypatch.setenv("AUDITK_JUDGE_BASE_URL", _LOCAL)
+    monkeypatch.setenv("AUDITK_JUDGE_MODEL", "nemotron-3-ultra")
+    route = respx.post(f"{_LOCAL}/chat/completions").mock(return_value=Response(200, json=_OK_BODY))
+
+    result = FireworksJudge().adjudicate("s-1", "Say hello", "hello", "contradict")
+
+    assert result.label == TaxonomyLabel.FAITHFUL
+    request = route.calls.last.request
+    assert json.loads(request.content)["model"] == "nemotron-3-ultra"
+    # No key configured, none sent: a local endpoint need not require one.
+    assert "authorization" not in {k.lower() for k in request.headers}
+
+
+def test_api_key_still_required_for_the_fireworks_default(monkeypatch: Any) -> None:
+    monkeypatch.delenv("FIREWORKS_API_KEY", raising=False)
+    monkeypatch.delenv("AUDITK_JUDGE_BASE_URL", raising=False)
+    monkeypatch.delenv("AUDITK_JUDGE_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="FIREWORKS_API_KEY"):
+        FireworksJudge()
+
+
+@respx.mock
+def test_judge_api_key_env_is_sent_as_bearer_to_a_custom_endpoint(monkeypatch: Any) -> None:
+    monkeypatch.delenv("FIREWORKS_API_KEY", raising=False)
+    monkeypatch.setenv("AUDITK_JUDGE_BASE_URL", _LOCAL)
+    monkeypatch.setenv("AUDITK_JUDGE_API_KEY", "local-token")
+    route = respx.post(f"{_LOCAL}/chat/completions").mock(return_value=Response(200, json=_OK_BODY))
+
+    FireworksJudge().adjudicate("s-1", "Say hello", "hello", "contradict")
+
+    assert route.calls.last.request.headers["authorization"] == "Bearer local-token"
+
+
+@respx.mock
+def test_constructor_arguments_beat_environment(monkeypatch: Any) -> None:
+    monkeypatch.setenv("AUDITK_JUDGE_BASE_URL", "http://env.invalid/v1")
+    monkeypatch.setenv("AUDITK_JUDGE_MODEL", "env-model")
+    route = respx.post(f"{_LOCAL}/chat/completions").mock(return_value=Response(200, json=_OK_BODY))
+
+    judge = FireworksJudge(api_key="k", base_url=_LOCAL, model_id="arg-model")
+    judge.adjudicate("s-1", "Say hello", "hello", "contradict")
+
+    assert judge.model_id == "arg-model"
+    assert json.loads(route.calls.last.request.content)["model"] == "arg-model"
+
+
+def test_default_endpoint_and_model_unchanged_without_overrides(monkeypatch: Any) -> None:
+    monkeypatch.delenv("AUDITK_JUDGE_BASE_URL", raising=False)
+    monkeypatch.delenv("AUDITK_JUDGE_MODEL", raising=False)
+    judge = FireworksJudge(api_key="test-key")
+    assert judge.model_id == "accounts/fireworks/models/gpt-oss-120b"
+    assert judge.base_url == "https://api.fireworks.ai/inference/v1"
