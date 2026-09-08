@@ -147,7 +147,11 @@ def test_attest_with_llm_judge_scorer_missing_env_fails_gracefully(
         ],
     )
     assert result.exit_code != 0
-    assert "Set RUN_JUDGE_MODEL=1 and ensure FIREWORKS_API_KEY is set" in result.output
+    # Actionable: names the switch and both ways to reach a judge (Fireworks
+    # key, or a self-hosted endpoint of a different model family).
+    assert "Set RUN_JUDGE_MODEL=1" in result.output
+    assert "FIREWORKS_API_KEY" in result.output
+    assert "AUDITK_JUDGE_BASE_URL" in result.output
 
 
 def test_attest_help_text_lists_all_scorer_options() -> None:

@@ -6,6 +6,23 @@ produced the auditk-trail-experiment paper's results
 against the auditk taxonomy label set and returns confidence, severity, and
 an evidence quote alongside the label, rather than a boolean rubric that gets
 mapped to a label deterministically in code.
+
+Self-hosted judges: the client speaks plain OpenAI-compatible chat
+completions, so it can be pointed at any such endpoint (llama.cpp, vLLM,
+an internal gateway) instead of Fireworks::
+
+    AUDITK_JUDGE_BASE_URL=http://127.0.0.1:8080/v1   # OpenAI-compatible base URL
+    AUDITK_JUDGE_MODEL=<model id as the endpoint names it>
+    AUDITK_JUDGE_API_KEY=<optional; sent as a Bearer token when set>
+
+or the equivalent constructor arguments, which win over the environment.
+FIREWORKS_API_KEY is only required when the endpoint is the Fireworks
+default. Independence rule, whatever the endpoint: the judge model must be
+a DIFFERENT model family from the agent under test. A model judging its
+own family's narration is the same-family self-evaluation this pipeline is
+built to avoid, so on a stack that serves Qwen, MiniMax and Nemotron,
+judge the Qwen and MiniMax runs with Nemotron and the Nemotron runs with
+one of the others. The evidence pack records the judge model id.
 """
 
 from __future__ import annotations
@@ -22,6 +39,9 @@ from auditk.analysis.taxonomy import RubricResult, TaxonomyLabel
 
 _FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1"
 _JUDGE_MODEL = "accounts/fireworks/models/gpt-oss-120b"
+_BASE_URL_ENV = "AUDITK_JUDGE_BASE_URL"
+_MODEL_ENV = "AUDITK_JUDGE_MODEL"
+_API_KEY_ENV = "AUDITK_JUDGE_API_KEY"
 _MAX_TOKENS = 2048  # reasoning model needs headroom for thinking trace
 _TEMPERATURE = 0.0
 _TOP_P = 1.0
@@ -121,18 +141,31 @@ class FireworksJudge:
     behind the paper's results. Model calls are retried on 5xx.
     """
 
-    model_id: str = _JUDGE_MODEL
     temperature: float = _TEMPERATURE
 
-    def __init__(self, api_key: str | None = None) -> None:
-        self._api_key = api_key or os.environ.get("FIREWORKS_API_KEY")
-        if not self._api_key:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        *,
+        base_url: str | None = None,
+        model_id: str | None = None,
+    ) -> None:
+        self.base_url = (base_url or os.environ.get(_BASE_URL_ENV) or _FIREWORKS_BASE_URL).rstrip(
+            "/"
+        )
+        self.model_id = model_id or os.environ.get(_MODEL_ENV) or _JUDGE_MODEL
+        self._api_key = (
+            api_key or os.environ.get(_API_KEY_ENV) or os.environ.get("FIREWORKS_API_KEY")
+        )
+        if not self._api_key and self.base_url == _FIREWORKS_BASE_URL:
             raise RuntimeError(
-                "FIREWORKS_API_KEY is required. Set the FIREWORKS_API_KEY environment variable."
+                "FIREWORKS_API_KEY is required for the Fireworks judge. Set it, or point the "
+                f"judge at a self-hosted endpoint with {_BASE_URL_ENV} (see module docstring)."
             )
+        headers = {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
         self._client = httpx.Client(
-            base_url=_FIREWORKS_BASE_URL,
-            headers={"Authorization": f"Bearer {self._api_key}"},
+            base_url=self.base_url,
+            headers=headers,
             timeout=120.0,  # reasoning models need more time
         )
 

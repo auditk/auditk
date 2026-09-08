@@ -231,8 +231,32 @@ flowchart TB
 | CLI flag | Key | Notes |
 |----------|-----|--------|
 | `--scorer nli` | `nli@0.2` | Default. Requires `pip install "auditk[nli]"` |
-| `--scorer llm-judge` | `llm-judge@0.3` | Two-stage NLI gate + LLM judge (Fireworks by default) |
+| `--scorer llm-judge` | `llm-judge@0.3` | Two-stage NLI gate + LLM judge (Fireworks by default; self-hosted via `AUDITK_JUDGE_BASE_URL`, see below) |
 | `--scorer jaccard` | lexical baseline | Deprecated; kept for comparison |
+
+### Self-hosted judge
+
+The judge client speaks plain OpenAI-compatible chat completions, so it can
+run against your own endpoint (llama.cpp, vLLM, an internal gateway) instead
+of Fireworks. Session content then never leaves your network:
+
+```bash
+export AUDITK_JUDGE_BASE_URL=http://127.0.0.1:8080/v1   # OpenAI-compatible base URL
+export AUDITK_JUDGE_MODEL=<model id as your endpoint names it>
+export AUDITK_JUDGE_API_KEY=<optional; sent as a Bearer token when set>
+RUN_JUDGE_MODEL=1 auditk attest --scorer llm-judge ...
+```
+
+`FIREWORKS_API_KEY` is only required for the Fireworks default. The NLI gate
+(`cross-encoder/nli-deberta-v3-small`) already runs locally in both modes.
+
+**Independence rule, whatever the endpoint:** the judge must be a *different
+model family* from the agent under test. A model judging its own family's
+narration is the same-family self-evaluation this pipeline is built to
+avoid. On a stack serving Qwen, MiniMax and Nemotron, judge the Qwen and
+MiniMax runs with Nemotron and the Nemotron runs with one of the others. The
+evidence pack records the judge model id, so a reviewer can check the rule
+was kept.
 
 ---
 
